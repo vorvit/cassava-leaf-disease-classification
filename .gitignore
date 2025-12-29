@@ -220,3 +220,6 @@ node_modules/
 
 # DVC local config may contain secrets; never commit
 .dvc/config.local
+
+# Test artifacts (temporary directories created during testing)
+x/
