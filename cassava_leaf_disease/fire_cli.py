@@ -64,6 +64,7 @@ class CassavaFireCLI:
 
     def train(
         self,
+        *overrides: str,
         epochs: int | None = None,
         batch_size: int | None = None,
         lr: float | None = None,
@@ -71,7 +72,6 @@ class CassavaFireCLI:
         synthetic: bool | None = None,
         mlflow: bool | None = None,
         num_workers: str | int | None = None,
-        *overrides: str,
     ) -> None:
         """Run training (forwards to Hydra CLI).
 
@@ -108,11 +108,11 @@ class CassavaFireCLI:
 
     def infer(
         self,
+        *overrides: str,
         image: str | None = None,
         ckpt: str | None = None,
         device: str | None = None,
         top_k: int | None = None,
-        *overrides: str,
     ) -> None:
         """Run inference (forwards to Hydra CLI).
 
@@ -145,7 +145,7 @@ class CassavaFireCLI:
 
         hydra_main([str(command), *overrides])
 
-    def download_data(self, force: bool | None = None, *overrides: str) -> None:
+    def download_data(self, *overrides: str, force: bool | None = None) -> None:
         """Download and extract dataset from a public link.
 
         Examples:
