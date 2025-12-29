@@ -86,6 +86,7 @@ def _normalize_max_time(value: object) -> str | None:
 def train(cfg: Any) -> None:
     """Run training using Hydra-composed config."""
     import pytorch_lightning as pl
+    import torch
     from pytorch_lightning.callbacks import Callback
     from pytorch_lightning.loggers import CSVLogger, Logger
 
@@ -168,9 +169,17 @@ def train(cfg: Any) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     max_time = _normalize_max_time(getattr(cfg.train, "max_time", None))
 
+    accelerator = str(getattr(cfg.train, "accelerator", "auto"))
+    if accelerator.lower() == "gpu" and not torch.cuda.is_available():
+        raise SystemExit(
+            "Requested train.accelerator=gpu, but CUDA is not available in this environment.\n"
+            "On Windows, install CUDA PyTorch into `.venv` with `scripts/install_torch_cuda.ps1`.\n"
+            "If you use `uv run`, add `--no-sync` to avoid reverting CUDA torch back to CPU-only."
+        )
+
     trainer = pl.Trainer(
         max_epochs=int(cfg.train.epochs),
-        accelerator=str(cfg.train.accelerator),
+        accelerator=accelerator,
         devices=cfg.train.devices,
         precision=cfg.train.precision,
         log_every_n_steps=int(cfg.train.log_every_n_steps),
