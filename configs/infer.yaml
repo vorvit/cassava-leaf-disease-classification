@@ -1,0 +1,16 @@
+defaults:
+  - data: cassava
+  - model: resnet18
+  - augment: basic
+  - _self_
+
+paths:
+  data_dir: data/cassava
+  outputs_dir: outputs
+
+infer:
+  # Path to a Lightning checkpoint (can be weights-only checkpoint from ModelCheckpoint).
+  checkpoint_path: ${paths.outputs_dir}/runs/version_0/checkpoints/best.ckpt
+  image_path: null
+  top_k: 5
+  device: auto # auto|cpu|cuda

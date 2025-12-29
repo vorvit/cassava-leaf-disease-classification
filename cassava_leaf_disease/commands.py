@@ -29,10 +29,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if command == "infer":
-        raise SystemExit("infer is not implemented yet.")
+        _run_infer(command_args)
+        return
 
     if command in {"download-data", "download_data"}:
-        raise SystemExit("download-data is not implemented yet.")
+        raise SystemExit("download-data is not implemented.")
 
     raise SystemExit(f"Unknown command: {command!r}. Try `python -m cassava_leaf_disease --help`.")
 
@@ -49,7 +50,6 @@ def _print_help() -> None:
                 "Commands (will be implemented in Task2):",
                 "  train          Train a model (runs DVC pull first)",
                 "  infer          Run inference on an image (runs DVC pull first)",
-                "  download-data  Optional: download data from public sources",
             ]
         )
     )
@@ -71,6 +71,21 @@ def _run_train(overrides: list[str]) -> None:
     from cassava_leaf_disease.training.train import train
 
     train(cfg)
+
+
+def _run_infer(overrides: list[str]) -> None:
+    # Lazy imports to keep CLI startup fast.
+    from pathlib import Path
+
+    from hydra import compose, initialize_config_dir
+
+    config_dir = (Path(__file__).resolve().parents[1] / "configs").resolve()
+    with initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
+        cfg = compose(config_name="infer", overrides=overrides)
+
+    from cassava_leaf_disease.serving.infer import infer
+
+    infer(cfg)
 
 
 def _ensure_utf8_stdio() -> None:
