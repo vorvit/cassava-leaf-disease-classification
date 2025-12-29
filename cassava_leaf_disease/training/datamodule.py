@@ -110,6 +110,15 @@ class CassavaDataModule(pl.LightningDataModule):
                 stratify=labels,
             )
 
+        limits_cfg = getattr(self.data_cfg, "limits", None)
+        if limits_cfg:
+            max_train = getattr(limits_cfg, "max_train_samples", None)
+            max_val = getattr(limits_cfg, "max_val_samples", None)
+            if max_train not in (None, "null"):
+                train_samples = train_samples[: int(max_train)]
+            if max_val not in (None, "null"):
+                val_samples = val_samples[: int(max_val)]
+
         self._train_dataset = CassavaCsvDataset(
             train_samples, images_dir=images_dir, transform=train_transform
         )

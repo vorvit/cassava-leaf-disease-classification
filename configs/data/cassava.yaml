@@ -12,6 +12,11 @@ paths:
   train_csv: ${paths.data_dir}/train.csv
   images_dir: ${paths.data_dir}/train_images
 
+limits:
+  # For quick local experiments. If null, use full dataset.
+  max_train_samples: null
+  max_val_samples: null
+
 split:
   strategy: holdout
   val_size: 0.2
