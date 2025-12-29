@@ -81,10 +81,10 @@ def infer(cfg: Any) -> dict[str, Any]:
     image = Image.open(image_path).convert("RGB")
     arr = np.asarray(image)
     aug = transform(image=arr)
-    x = aug["image"].unsqueeze(0).to(device)
+    inputs = aug["image"].unsqueeze(0).to(device)
 
     with torch.no_grad():
-        logits = model(x)
+        logits = model(inputs)
         probs = torch.softmax(logits, dim=1).squeeze(0).detach().cpu().numpy()
 
     top_k = int(getattr(cfg.infer, "top_k", len(class_names)))

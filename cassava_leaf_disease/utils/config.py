@@ -42,4 +42,4 @@ def get_default_class_names() -> list[str]:
 
     if not class_names:
         return default
-    return [str(x) for x in class_names]
+    return [str(name) for name in class_names]

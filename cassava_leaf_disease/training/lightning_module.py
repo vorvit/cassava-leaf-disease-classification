@@ -45,28 +45,28 @@ class CassavaClassifier(pl.LightningModule):
             average="macro",
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return self.model(inputs)
 
     def training_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
-        x, y = batch
-        logits = self(x)
-        loss = self.loss_fn(logits, y)
+        images, labels = batch
+        logits = self(images)
+        loss = self.loss_fn(logits, labels)
         preds = torch.argmax(logits, dim=1)
 
         self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True)
         self.log(
             "train/acc",
-            self.acc(preds, y),
+            self.acc(preds, labels),
             prog_bar=True,
             on_step=False,
             on_epoch=True,
         )
         self.log(
             "train/f1_macro",
-            self.f1_macro(preds, y),
+            self.f1_macro(preds, labels),
             prog_bar=False,
             on_step=False,
             on_epoch=True,
@@ -74,16 +74,22 @@ class CassavaClassifier(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
-        x, y = batch
-        logits = self(x)
-        loss = self.loss_fn(logits, y)
+        images, labels = batch
+        logits = self(images)
+        loss = self.loss_fn(logits, labels)
         preds = torch.argmax(logits, dim=1)
 
         self.log("val/loss", loss, prog_bar=True, on_step=False, on_epoch=True)
-        self.log("val/acc", self.acc(preds, y), prog_bar=True, on_step=False, on_epoch=True)
+        self.log(
+            "val/acc",
+            self.acc(preds, labels),
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+        )
         self.log(
             "val/f1_macro",
-            self.f1_macro(preds, y),
+            self.f1_macro(preds, labels),
             prog_bar=True,
             on_step=False,
             on_epoch=True,

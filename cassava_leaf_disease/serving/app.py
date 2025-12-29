@@ -70,12 +70,12 @@ def create_app() -> FastAPI:
 
         arr = np.asarray(image)
         aug = transform(image=arr)
-        x = aug["image"].unsqueeze(0).to(device)
+        inputs = aug["image"].unsqueeze(0).to(device)
 
         import torch
 
         with torch.no_grad():
-            logits = model(x)
+            logits = model(inputs)
             probs = torch.softmax(logits, dim=1).squeeze(0).detach().cpu().numpy()
 
         pred_id = int(np.argmax(probs))
