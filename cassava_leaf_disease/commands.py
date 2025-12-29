@@ -25,10 +25,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     command_args = args[1:]
 
     if command == "train":
+        if _wants_help(command_args):
+            _print_train_help()
+            return
         _run_train(command_args)
         return
 
     if command == "infer":
+        if _wants_help(command_args):
+            _print_infer_help()
+            return
         _run_infer(command_args)
         return
 
@@ -50,6 +56,49 @@ def _print_help() -> None:
                 "Commands (will be implemented in Task2):",
                 "  train          Train a model (runs DVC pull first)",
                 "  infer          Run inference on an image (runs DVC pull first)",
+            ]
+        )
+    )
+
+
+def _wants_help(args: list[str]) -> bool:
+    return any(a in {"-h", "--help", "help"} for a in args)
+
+
+def _print_train_help() -> None:
+    print(
+        "\n".join(
+            [
+                "cassava_leaf_disease train",
+                "",
+                "Usage:",
+                "  python -m cassava_leaf_disease train [hydra_overrides...]",
+                "",
+                "Examples:",
+                "  python -m cassava_leaf_disease train",
+                "  python -m cassava_leaf_disease train train.epochs=2 train.batch_size=32",
+                "  python -m cassava_leaf_disease train data.synthetic.enabled=true "
+                "logger.enabled=false",
+            ]
+        )
+    )
+
+
+def _print_infer_help() -> None:
+    print(
+        "\n".join(
+            [
+                "cassava_leaf_disease infer",
+                "",
+                "Usage:",
+                "  python -m cassava_leaf_disease infer infer.image_path=... [hydra_overrides...]",
+                "",
+                "Examples:",
+                "  python -m cassava_leaf_disease infer "
+                "infer.image_path=data/cassava/train_images/xxx.jpg",
+                "  python -m cassava_leaf_disease infer infer.image_path=... "
+                "infer.checkpoint_path=outputs/.../best.ckpt",
+                "  python -m cassava_leaf_disease infer infer.image_path=... logger.enabled=false",
             ]
         )
     )

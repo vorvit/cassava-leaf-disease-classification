@@ -2,6 +2,7 @@ defaults:
   - data: cassava
   - model: resnet18
   - augment: basic
+  - logger: mlflow
   - _self_
 
 paths:

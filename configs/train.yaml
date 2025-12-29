@@ -25,6 +25,15 @@ train:
   log_every_n_steps: 10
   fast_dev_run: false
   save_checkpoints: false
+  artifacts:
+    # If enabled and a checkpoint exists, log it to MLflow as an artifact.
+    log_checkpoint_to_mlflow: true
+    # Optional: upload checkpoint to Yandex S3 (requires creds, disabled by default).
+    upload_checkpoint_to_s3: false
+    s3_bucket: mlops-cassava-project
+    s3_prefix: cassava/models
+    s3_endpoint_url: https://storage.yandexcloud.net
+    s3_region: ru-central1
 
 hydra:
   run:

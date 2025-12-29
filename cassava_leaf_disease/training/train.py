@@ -107,3 +107,74 @@ def train(cfg: Any) -> None:
     )
 
     trainer.fit(model=model, datamodule=datamodule)
+
+    # Optional artifact logging/upload.
+    artifacts_cfg = getattr(cfg.train, "artifacts", None)
+    if not artifacts_cfg:
+        return
+
+    # Find best checkpoint path if checkpointing was enabled.
+    best_ckpt_path: str | None = None
+    for cb in getattr(trainer, "callbacks", []):
+        if cb.__class__.__name__ == "ModelCheckpoint":
+            best_ckpt_path = getattr(cb, "best_model_path", None)
+            break
+
+    if not best_ckpt_path:
+        return
+
+    ckpt_path = Path(str(best_ckpt_path))
+    if not ckpt_path.exists():
+        return
+
+    # 1) Log checkpoint to MLflow artifacts (if MLflow logger is enabled).
+    if bool(getattr(artifacts_cfg, "log_checkpoint_to_mlflow", True)):
+        for lg in loggers:
+            if lg.__class__.__name__ == "MLFlowLogger":
+                try:
+                    # MLFlowLogger exposes the active run_id; use low-level client to log artifact.
+                    run_id = getattr(lg, "run_id", None)
+                    experiment = getattr(lg, "experiment", None)
+                    if run_id and experiment:
+                        experiment.log_artifact(run_id, str(ckpt_path), artifact_path="checkpoints")
+                        experiment.log_param(run_id, "best_checkpoint_path", str(ckpt_path))
+                except Exception as exc:
+                    print(f"[mlflow] artifact logging failed (continuing): {exc}")
+
+    # 2) Optional: upload checkpoint to S3 (Yandex Object Storage).
+    if bool(getattr(artifacts_cfg, "upload_checkpoint_to_s3", False)):
+        try:
+            import os
+
+            import boto3
+        except Exception as exc:
+            print(f"[s3] upload skipped (missing deps): {exc}")
+            return
+
+        access_key = os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("YC_ACCESS_KEY_ID")
+        secret_key = os.getenv("AWS_SECRET_ACCESS_KEY") or os.getenv("YC_SECRET_ACCESS_KEY")
+        if not access_key or not secret_key:
+            print("[s3] upload skipped (missing credentials in env)")
+            return
+
+        bucket = str(getattr(artifacts_cfg, "s3_bucket", "mlops-cassava-project"))
+        prefix = str(getattr(artifacts_cfg, "s3_prefix", "cassava/models")).strip("/")
+        endpoint_url = str(
+            getattr(artifacts_cfg, "s3_endpoint_url", "https://storage.yandexcloud.net")
+        )
+        region = str(getattr(artifacts_cfg, "s3_region", "ru-central1"))
+
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            endpoint_url=endpoint_url,
+            region_name=region,
+        )
+
+        key = f"{prefix}/{ckpt_path.name}"
+        try:
+            s3.upload_file(str(ckpt_path), bucket, key)
+            print(f"[s3] uploaded: s3://{bucket}/{key}")
+        except Exception as exc:
+            print(f"[s3] upload failed (continuing): {exc}")

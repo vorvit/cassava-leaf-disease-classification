@@ -18,6 +18,22 @@ def _bool_override(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        raise ValueError("bool value is None")
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if v in {"0", "false", "f", "no", "n", "off"}:
+            return False
+    raise ValueError(f"Unsupported boolean value: {value!r}")
+
+
 def _normalize_fire_args(args: list[str]) -> list[str]:
     """Normalize user-friendly CLI flags into python-fire-friendly ones.
 
@@ -78,9 +94,11 @@ class CassavaFireCLI:
         if num_workers is not None:
             hydra_overrides.append(f"train.num_workers={num_workers}")
         if synthetic is not None:
-            hydra_overrides.append(f"data.synthetic.enabled={_bool_override(bool(synthetic))}")
+            hydra_overrides.append(
+                f"data.synthetic.enabled={_bool_override(_parse_bool(synthetic))}"
+            )
         if mlflow is not None:
-            hydra_overrides.append(f"logger.enabled={_bool_override(bool(mlflow))}")
+            hydra_overrides.append(f"logger.enabled={_bool_override(_parse_bool(mlflow))}")
 
         hydra_main(["train", *hydra_overrides, *overrides])
 

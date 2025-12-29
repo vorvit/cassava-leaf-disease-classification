@@ -28,7 +28,8 @@ class CassavaClassifier(pl.LightningModule):
             drop_rate=float(cfg.model.dropout),
         )
 
-        loss_cfg = getattr(cfg.train, "loss", None)
+        train_cfg = getattr(cfg, "train", None)
+        loss_cfg = getattr(train_cfg, "loss", None) if train_cfg else None
         if loss_cfg:
             loss_name = str(getattr(loss_cfg, "name", "cross_entropy")).lower()
             label_smoothing = float(getattr(loss_cfg, "label_smoothing", 0.0))
@@ -89,9 +90,12 @@ class CassavaClassifier(pl.LightningModule):
         )
 
     def configure_optimizers(self) -> Any:
+        train_cfg = getattr(self.cfg, "train", None)
+        lr = float(getattr(train_cfg, "lr", 0.0003)) if train_cfg else 0.0003
+        weight_decay = float(getattr(train_cfg, "weight_decay", 0.0001)) if train_cfg else 0.0001
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=float(self.cfg.train.lr),
-            weight_decay=float(self.cfg.train.weight_decay),
+            lr=lr,
+            weight_decay=weight_decay,
         )
         return optimizer
