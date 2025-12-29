@@ -160,6 +160,20 @@ python -m uv run pre-commit install
 python -m uv run pre-commit run -a
 ```
 
+## Tests & Coverage
+
+Run tests:
+
+```powershell
+python -m uv run pytest
+```
+
+Coverage (project is configured with `fail_under = 95`):
+
+```powershell
+python -m uv run pytest --cov=cassava_leaf_disease --cov-report=term-missing
+```
+
 ## MLflow (local)
 
 Task assumes MLflow is available at `http://127.0.0.1:8080`.
@@ -211,12 +225,26 @@ If you want to use `uv run`, add `--no-sync`:
 python -m uv run --no-sync cassava train train.accelerator=gpu train.devices=1 train.num_workers=0 train.precision=16-mixed
 ```
 
+## Results (latest GPU run on real data)
+
+Latest run (25 minute limit, stopped by `train.max_time`):
+
+- **MLflow run**: `ac0e608a1a774095aabb0f0c87b4bbb8` — `http://127.0.0.1:8080/#/experiments/1/runs/ac0e608a1a774095aabb0f0c87b4bbb8`
+- **val/acc**: `0.686`
+- **val/f1_macro**: `0.584`
+- **val/loss**: `1.302`
+- **train/acc**: `0.917`
+- **train/loss_epoch**: `0.516`
+- **Best model (best.ckpt) in S3**:
+  - `s3://mlops-cassava-project/cassava/models/2882636f460823a9839bce138ce9adbffe968d00/ac0e608a1a774095aabb0f0c87b4bbb8/best.ckpt`
+  - metrics (JSON): `s3://mlops-cassava-project/cassava/models/2882636f460823a9839bce138ce9adbffe968d00/ac0e608a1a774095aabb0f0c87b4bbb8/metrics.json`
+
 ## Inference (FastAPI, minimal)
 
 Run:
 
 ```powershell
-python -m uv run uvicorn cassava_leaf_disease.serving.app:app --host 127.0.0.1 --port 8000
+python -m uv run uvicorn --factory cassava_leaf_disease.serving.app:create_app --host 127.0.0.1 --port 8000
 ```
 
 Endpoints:
@@ -224,8 +252,61 @@ Endpoints:
 - `GET /health`
 - `POST /predict` (JPEG/PNG → JSON format above)
 
-Note: `/predict` is currently a minimal deterministic stub to document the API contract; exporting and
-serving a real trained checkpoint is a follow‑up step.
+For real predictions you must point the server to a checkpoint:
+
+- `CASSAVA_CHECKPOINT_PATH=artifacts/best.ckpt`
+- `CASSAVA_DEVICE=auto` (or `cpu` / `cuda`)
+
+## Inference (CLI) — run prediction with the best checkpoint
+
+Models are managed via DVC (same as data), not committed to Git.
+
+### Step 1: Download model from S3 and add to DVC tracking
+
+```powershell
+.\.venv\Scripts\python.exe -m cassava_leaf_disease download-model
+```
+
+This command:
+
+- Downloads `best.ckpt` from S3 (URI from `configs/download_model.yaml`)
+- Saves to `artifacts/best.ckpt` (ignored by Git)
+- Adds to DVC tracking (creates `artifacts/best.ckpt.dvc`)
+- Optionally pushes to DVC remote (if `download_model.push=true`)
+
+After this, you can commit only the `.dvc` file (not the `.ckpt` itself):
+
+```powershell
+git add artifacts/best.ckpt.dvc
+git commit -m "feat: add best model checkpoint to DVC"
+```
+
+### Step 2: Run inference
+
+**Option A: Use DVC-tracked checkpoint (recommended, faster):**
+
+```powershell
+.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
+  infer.checkpoint_path="artifacts/best.ckpt" `
+  infer.image_path="data/cassava/test_image/2216849948.jpg" `
+  infer.device=auto
+```
+
+**Option B: Direct download from S3 (no local cache, slower):**
+
+```powershell
+.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
+  infer.checkpoint_path=null `
+  infer.checkpoint_s3_uri="s3://mlops-cassava-project/cassava/models/2882636f460823a9839bce138ce9adbffe968d00/ac0e608a1a774095aabb0f0c87b4bbb8/best.ckpt" `
+  infer.image_path="data/cassava/test_image/2216849948.jpg" `
+  infer.device=auto
+```
+
+Notes:
+
+- `infer()` automatically calls `dvc pull` for `checkpoint_path` if the model is in DVC tracking.
+- If `checkpoint_path` is not found, falls back to `checkpoint_s3_uri` (downloads to a temporary file, then deletes it).
+- **Recommended**: Use DVC for caching (option A) — faster and doesn't require downloading every time.
 
 ## Changelog (SemVer + Conventional Commits)
 

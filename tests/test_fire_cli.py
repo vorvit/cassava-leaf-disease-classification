@@ -98,6 +98,29 @@ def test_fire_infer_all_params(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "infer.top_k=2" in got.overrides
 
 
+def test_fire_infer_ckpt_s3(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.fire_cli import CassavaFireCLI
+
+    got = SimpleNamespace(name=None, overrides=None)
+
+    def fake_compose(name, overrides):
+        got.name = name
+        got.overrides = overrides
+        return SimpleNamespace()
+
+    monkeypatch.setattr("cassava_leaf_disease.commands.compose_cfg", fake_compose, raising=False)
+    import importlib
+
+    infer_mod = importlib.import_module("cassava_leaf_disease.serving.infer")
+    monkeypatch.setattr(infer_mod, "infer", lambda *_a, **_k: None)
+
+    cli = CassavaFireCLI()
+    cli.infer(image="x.jpg", ckpt_s3="s3://b/k/best.ckpt")
+    assert got.name == "infer"
+    assert "infer.checkpoint_path=null" in got.overrides
+    assert "infer.checkpoint_s3_uri=s3://b/k/best.ckpt" in got.overrides
+
+
 def test_fire_download_data(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     from cassava_leaf_disease.fire_cli import CassavaFireCLI
 
@@ -135,6 +158,74 @@ def test_fire_download_data_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     cli = CassavaFireCLI()
     with pytest.raises(SystemExit, match="download-data failed"):
         cli.download_data(force=True)
+
+
+def test_fire_download_model_success(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from cassava_leaf_disease.fire_cli import CassavaFireCLI
+
+    monkeypatch.setattr(
+        "cassava_leaf_disease.commands.compose_cfg",
+        lambda *_a, **_k: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.download_model.download_model_to_dvc",
+        lambda *_a, **_k: SimpleNamespace(success=True, message="ok", checkpoint_path=None),
+        raising=False,
+    )
+
+    cli = CassavaFireCLI()
+    cli.download_model(push=True)
+    out = capsys.readouterr().out
+    assert "download-model" in out
+
+
+def test_fire_download_model_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.fire_cli import CassavaFireCLI
+
+    got = SimpleNamespace(name=None, overrides=None)
+
+    def fake_compose(name, overrides):
+        got.name = name
+        got.overrides = overrides
+        return SimpleNamespace()
+
+    monkeypatch.setattr("cassava_leaf_disease.commands.compose_cfg", fake_compose, raising=False)
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.download_model.download_model_to_dvc",
+        lambda *_a, **_k: SimpleNamespace(success=True, message="ok", checkpoint_path=None),
+        raising=False,
+    )
+
+    cli = CassavaFireCLI()
+    cli.download_model(
+        s3_uri="s3://b/k/best.ckpt",
+        dst_dir="artifacts",
+        overwrite=True,
+        push=False,
+    )
+    assert got.name == "download_model"
+    assert "download_model.s3_uri=s3://b/k/best.ckpt" in got.overrides
+    assert "download_model.dst_dir=artifacts" in got.overrides
+    assert "download_model.overwrite=true" in got.overrides
+    assert "download_model.push=false" in got.overrides
+
+
+def test_fire_download_model_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.fire_cli import CassavaFireCLI
+
+    monkeypatch.setattr(
+        "cassava_leaf_disease.commands.compose_cfg",
+        lambda *_a, **_k: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.download_model.download_model_to_dvc",
+        lambda *_a, **_k: SimpleNamespace(success=False, message="err", checkpoint_path=None),
+        raising=False,
+    )
+
+    cli = CassavaFireCLI()
+    with pytest.raises(SystemExit, match="download-model failed"):
+        cli.download_model(push=True)
 
 
 def test_fire_raw(monkeypatch: pytest.MonkeyPatch) -> None:

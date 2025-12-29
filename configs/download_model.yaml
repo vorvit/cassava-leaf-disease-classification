@@ -1,0 +1,14 @@
+defaults:
+  - _self_
+
+download_model:
+  # S3 URI of the checkpoint to download
+  s3_uri: s3://mlops-cassava-project/cassava/models/2882636f460823a9839bce138ce9adbffe968d00/ac0e608a1a774095aabb0f0c87b4bbb8/best.ckpt
+  # Local directory to download into (will be created if missing)
+  dst_dir: artifacts
+  # Overwrite existing file if it exists
+  overwrite: false
+  # Push to DVC remote after adding to tracking
+  push: false
+  # DVC remote name to push to (if push=true)
+  remote: yandex_s3

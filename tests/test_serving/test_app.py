@@ -64,6 +64,76 @@ def test_fastapi_app_predict_direct_call(tmp_path, monkeypatch: pytest.MonkeyPat
     assert "predicted_class_id" in result
 
 
+def test_fastapi_app_predict_s3_uri_download(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import cassava_leaf_disease.serving.app as app_mod
+    from cassava_leaf_disease.serving.app import create_app
+
+    monkeypatch.delenv("CASSAVA_CHECKPOINT_PATH", raising=False)
+    monkeypatch.setenv("CASSAVA_CHECKPOINT_S3_URI", "s3://b/x/best.ckpt")
+    monkeypatch.setenv("CASSAVA_DEVICE", "cpu")
+
+    # Stub downloader to "download" into tmp_path.
+    downloaded = tmp_path / "best.ckpt"
+
+    def fake_download_checkpoint_from_s3_uri(**_k):
+        downloaded.write_bytes(b"fake")
+        return type("R", (), {"success": True, "path": downloaded, "message": "ok"})()
+
+    monkeypatch.setattr(
+        app_mod,
+        "download_checkpoint_from_s3_uri",
+        fake_download_checkpoint_from_s3_uri,
+    )
+
+    class DummyModel:
+        def __call__(self, inputs):
+            return torch.zeros((1, 5))
+
+    import torch
+
+    monkeypatch.setattr(app_mod, "_load_model", lambda *a, **k: DummyModel())
+    monkeypatch.setattr(
+        app_mod,
+        "build_transforms",
+        lambda *a, **k: (lambda image: {"image": torch.zeros((3, 8, 8))}),
+    )
+
+    from omegaconf import OmegaConf
+
+    monkeypatch.setattr(
+        OmegaConf,
+        "load",
+        lambda *_a, **_k: OmegaConf.create(
+            {"data": {"dataset": {"class_names": []}}, "augment": {}}
+        ),
+    )
+
+    app = create_app()
+    predict = None
+    for route in app.routes:
+        if getattr(route, "path", None) == "/predict":
+            predict = route.endpoint
+            break
+    assert predict is not None
+
+    from io import BytesIO
+
+    import numpy as np
+    from PIL import Image
+    from starlette.datastructures import UploadFile
+
+    buf = BytesIO()
+    Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(buf, format="PNG")
+    buf.seek(0)
+    upload = UploadFile(
+        filename="x.png",
+        file=BytesIO(buf.getvalue()),
+        headers={"content-type": "image/png"},
+    )
+    result = asyncio.run(predict(upload))
+    assert "predicted_class_id" in result
+
+
 def test_fastapi_app_error_branches(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from starlette.datastructures import UploadFile
 
@@ -82,6 +152,7 @@ def test_fastapi_app_error_branches(tmp_path, monkeypatch: pytest.MonkeyPatch) -
 
     # no checkpoint env -> 503
     monkeypatch.delenv("CASSAVA_CHECKPOINT_PATH", raising=False)
+    monkeypatch.delenv("CASSAVA_CHECKPOINT_S3_URI", raising=False)
     buf = BytesIO()
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(buf, format="PNG")
     buf.seek(0)

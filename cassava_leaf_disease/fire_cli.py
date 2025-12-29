@@ -111,13 +111,16 @@ class CassavaFireCLI:
         *overrides: str,
         image: str | None = None,
         ckpt: str | None = None,
+        ckpt_s3: str | None = None,
         device: str | None = None,
         top_k: int | None = None,
     ) -> None:
         """Run inference (forwards to Hydra CLI).
 
         Examples:
-          cassava-fire infer --image data/cassava/train_images/xxx.jpg --ckpt outputs/.../best.ckpt
+          cassava-fire infer --image data/cassava/test_image/2216849948.jpg
+          cassava-fire infer --image ... --ckpt artifacts/best.ckpt
+          cassava-fire infer --image ... --ckpt_s3 s3://bucket/key/best.ckpt
         """
         from cassava_leaf_disease.commands import compose_cfg
         from cassava_leaf_disease.serving.infer import infer as infer_impl
@@ -127,6 +130,10 @@ class CassavaFireCLI:
             hydra_overrides.append(f"infer.image_path={image}")
         if ckpt is not None:
             hydra_overrides.append(f"infer.checkpoint_path={ckpt}")
+        if ckpt_s3 is not None:
+            # If S3 URI is provided, set checkpoint_path to null and use checkpoint_s3_uri
+            hydra_overrides.append("infer.checkpoint_path=null")
+            hydra_overrides.append(f"infer.checkpoint_s3_uri={ckpt_s3}")
         if device is not None:
             hydra_overrides.append(f"infer.device={device}")
         if top_k is not None:
@@ -165,6 +172,45 @@ class CassavaFireCLI:
             raise SystemExit(f"download-data failed: {result.message}")
         print(f"[download-data] {result.message}")
 
+    def download_model(
+        self,
+        *overrides: str,
+        s3_uri: str | None = None,
+        dst_dir: str | None = None,
+        overwrite: bool | None = None,
+        push: bool | None = None,
+    ) -> None:
+        """Download checkpoint from S3 and add to DVC tracking.
+
+        Examples:
+          cassava-fire download_model
+          cassava-fire download_model --s3_uri s3://bucket/key/best.ckpt
+          cassava-fire download_model --push
+        """
+        from cassava_leaf_disease.commands import compose_cfg
+        from cassava_leaf_disease.data.download_model import download_model_to_dvc as impl
+
+        hydra_overrides: list[str] = []
+        if s3_uri is not None:
+            hydra_overrides.append(f"download_model.s3_uri={s3_uri}")
+        if dst_dir is not None:
+            hydra_overrides.append(f"download_model.dst_dir={dst_dir}")
+        if overwrite is not None:
+            hydra_overrides.append(
+                f"download_model.overwrite={_bool_override(_parse_bool(overwrite))}"
+            )
+        if push is not None:
+            hydra_overrides.append(f"download_model.push={_bool_override(_parse_bool(push))}")
+
+        cfg = compose_cfg("download_model", [*hydra_overrides, *overrides])
+        result = impl(cfg)
+        if not result.success:
+            raise SystemExit(f"download-model failed: {result.message}")
+        print(f"[download-model] {result.message}")
+        if result.checkpoint_path:
+            print(f"[download-model] Checkpoint: {result.checkpoint_path}")
+            print(f"[download-model] DVC file: {result.checkpoint_path}.dvc")
+
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Entry point for `cassava-leaf-disease-fire` and `python -m ...fire_cli`."""
@@ -178,5 +224,5 @@ def main(argv: Sequence[str] | None = None) -> None:
     fire.Fire(CassavaFireCLI, command=args, name="cassava-fire")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

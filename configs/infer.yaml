@@ -1,7 +1,7 @@
 defaults:
   - data: cassava
-  - model: resnet18
-  - augment: basic
+  - model: efficientnet_b0
+  - augment: strong
   - logger: mlflow
   - _self_
 
@@ -10,8 +10,14 @@ paths:
   outputs_dir: outputs
 
 infer:
-  # Path to a Lightning checkpoint (can be weights-only checkpoint from ModelCheckpoint).
-  checkpoint_path: ${paths.outputs_dir}/runs/version_0/checkpoints/best.ckpt
+  # Path to a Lightning checkpoint (DVC-tracked, will be pulled via `dvc pull`).
+  # Example: artifacts/best.ckpt (must be tracked in DVC, not committed to Git).
+  # If null or not found, falls back to checkpoint_s3_uri (lazy download to temp file).
+  checkpoint_path: artifacts/best.ckpt
+  # Optional: S3 URI for lazy download if checkpoint_path is not found.
+  # Example: s3://bucket/key/best.ckpt
+  # Note: This downloads to a temporary file each time (slower, but no local storage needed).
+  checkpoint_s3_uri: null
   image_path: null
   top_k: 5
   device: auto # auto|cpu|cuda

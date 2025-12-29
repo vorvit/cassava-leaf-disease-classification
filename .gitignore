@@ -211,6 +211,14 @@ dvc_storage/
 
 # Local outputs/artifacts
 outputs/
+artifacts/
+
+# Trained model artifacts (never commit)
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.cbm
 
 # Node (used by some pre-commit hooks)
 node_modules/

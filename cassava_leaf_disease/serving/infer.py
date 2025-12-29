@@ -15,6 +15,7 @@ import torch
 from PIL import Image
 
 from cassava_leaf_disease.data import dvc_pull
+from cassava_leaf_disease.serving.model_download import download_checkpoint_from_s3_uri
 from cassava_leaf_disease.training.lightning_module import CassavaClassifier
 from cassava_leaf_disease.training.transforms import build_transforms
 
@@ -41,11 +42,22 @@ def _load_model(cfg: Any, ckpt_path: Path, device: torch.device) -> CassavaClass
     if not isinstance(state_dict, dict):
         raise ValueError("Unsupported checkpoint format (expected dict with 'state_dict').")
 
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    # Lightning checkpoints include non-model module states (loss, metrics, etc.).
+    # For inference we only need the backbone/classifier weights.
+    inner = getattr(model, "model", None)
+    if not isinstance(inner, torch.nn.Module):
+        raise ValueError("Unsupported model wrapper (expected `CassavaClassifier.model`).")
+
+    if any(str(k).startswith("model.") for k in state_dict):
+        filtered = {
+            str(k)[len("model.") :]: v for k, v in state_dict.items() if str(k).startswith("model.")
+        }
+        missing, unexpected = inner.load_state_dict(filtered, strict=False)
+    else:
+        missing, unexpected = inner.load_state_dict(state_dict, strict=False)
+
     if unexpected:
         raise ValueError(f"Unexpected keys in checkpoint: {unexpected[:5]} (and more)")
-
-    # Missing keys can happen when strict=False; keep it strict-ish for a clean UX.
     if missing:
         raise ValueError(f"Missing keys in checkpoint: {missing[:5]} (and more)")
 
@@ -56,6 +68,7 @@ def _load_model(cfg: Any, ckpt_path: Path, device: torch.device) -> CassavaClass
 
 def infer(cfg: Any) -> dict[str, Any]:
     """Run inference for a single image path."""
+    # Pull data via DVC (same as training).
     data_dir = str(cfg.paths.data_dir)
     pull_result = dvc_pull(targets=[data_dir])
     if not pull_result.success:
@@ -71,9 +84,50 @@ def infer(cfg: Any) -> dict[str, Any]:
     if not image_path.exists():
         raise SystemExit(f"Image not found: {image_path}")
 
-    ckpt_path = Path(str(cfg.infer.checkpoint_path))
-    if not ckpt_path.exists():
-        raise SystemExit(f"Checkpoint not found: {ckpt_path}")
+    # Pull model checkpoint via DVC (same pattern as data).
+    ckpt_path_raw = getattr(cfg.infer, "checkpoint_path", None)
+    ckpt_path: Path | None = None
+    temp_ckpt_path: Path | None = None  # Track temp files for cleanup
+
+    if ckpt_path_raw not in (None, "null"):
+        ckpt_path_str = str(ckpt_path_raw)
+        # If checkpoint path is DVC-tracked, pull it via DVC.
+        ckpt_pull_result = dvc_pull(targets=[ckpt_path_str])
+        if not ckpt_pull_result.success:
+            print(f"[dvc] checkpoint pull failed (continuing): {ckpt_pull_result.message}")
+        ckpt_path = Path(ckpt_path_str)
+
+    # Fallback: if checkpoint not found locally, try downloading from S3 URI (lazy download).
+    if ckpt_path is None or not ckpt_path.exists():
+        s3_uri = getattr(cfg.infer, "checkpoint_s3_uri", None)
+        if s3_uri not in (None, "null"):
+            import os
+            import tempfile
+
+            endpoint_url = os.getenv("AWS_ENDPOINT_URL") or os.getenv("S3_ENDPOINT_URL")
+            # Download to a temporary file (will be cleaned up after model loading).
+            temp_dir = Path(tempfile.gettempdir()) / "cassava_infer"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            dl_result = download_checkpoint_from_s3_uri(
+                s3_uri=str(s3_uri),
+                dst_dir=temp_dir,
+                overwrite=True,  # Always re-download for fresh model
+                endpoint_url=endpoint_url,
+            )
+            if not dl_result.success or dl_result.path is None:
+                raise SystemExit(
+                    f"Checkpoint not found locally and S3 download failed: {dl_result.message}. "
+                    "Set infer.checkpoint_path to a DVC-tracked path or ensure "
+                    "infer.checkpoint_s3_uri is accessible."
+                )
+            ckpt_path = dl_result.path
+            temp_ckpt_path = ckpt_path  # Mark for cleanup
+            print(f"[infer] Downloaded checkpoint from S3 to temporary file: {ckpt_path}")
+        else:
+            raise SystemExit(
+                "Checkpoint not found. Set infer.checkpoint_path (DVC-tracked) or "
+                "infer.checkpoint_s3_uri (S3 URI)."
+            )
 
     device = _resolve_device(str(cfg.infer.device))
     model = _load_model(cfg, ckpt_path=ckpt_path, device=device)
@@ -105,6 +159,14 @@ def infer(cfg: Any) -> dict[str, Any]:
         ],
         "probabilities": {name: float(p) for name, p in zip(class_names, probs, strict=True)},
     }
+
+    # Cleanup temporary checkpoint file if it was downloaded from S3.
+    if temp_ckpt_path is not None and temp_ckpt_path.exists():
+        try:
+            temp_ckpt_path.unlink()
+            print(f"[infer] Cleaned up temporary checkpoint: {temp_ckpt_path}")
+        except Exception as exc:
+            print(f"[infer] Warning: failed to cleanup temp file {temp_ckpt_path}: {exc}")
 
     print(json.dumps(result, ensure_ascii=False))
     return result

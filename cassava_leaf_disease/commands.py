@@ -47,6 +47,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         _run_download_data(command_args)
         return
 
+    if command in {"download-model", "download_model"}:
+        if _wants_help(command_args):
+            _print_download_model_help()
+            return
+        _run_download_model(command_args)
+        return
+
     raise SystemExit(f"Unknown command: {command!r}. Try `python -m cassava_leaf_disease --help`.")
 
 
@@ -63,6 +70,7 @@ def _print_help() -> None:
                 "  train          Train a model (runs DVC pull first)",
                 "  infer          Run inference on an image (runs DVC pull first)",
                 "  download-data  Download and extract dataset from a public link",
+                "  download-model Download checkpoint from S3 and add to DVC tracking",
             ]
         )
     )
@@ -105,9 +113,11 @@ def _print_infer_help() -> None:
                 "",
                 "Examples:",
                 "  python -m cassava_leaf_disease infer "
-                "infer.image_path=data/cassava/train_images/xxx.jpg",
+                "infer.image_path=data/cassava/test_image/2216849948.jpg",
                 "  python -m cassava_leaf_disease infer infer.image_path=... "
-                "infer.checkpoint_path=outputs/.../best.ckpt",
+                "infer.checkpoint_path=artifacts/best.ckpt",
+                "  python -m cassava_leaf_disease infer infer.image_path=... "
+                "infer.checkpoint_path=null infer.checkpoint_s3_uri=s3://bucket/key/best.ckpt",
                 "  python -m cassava_leaf_disease infer infer.image_path=... logger.enabled=false",
             ]
         )
@@ -215,6 +225,41 @@ def _run_download_data(overrides: list[str]) -> None:
     if not result.success:
         raise SystemExit(f"download-data failed: {result.message}")
     print(f"[download-data] {result.message}")
+
+
+def _print_download_model_help() -> None:
+    print(
+        "\n".join(
+            [
+                "download-model",
+                "",
+                "Download a model checkpoint from S3 and add it to DVC tracking.",
+                "",
+                "Usage:",
+                "  python -m cassava_leaf_disease download-model",
+                "  python -m cassava_leaf_disease download-model [hydra_overrides...]",
+                "",
+                "Examples:",
+                "  python -m cassava_leaf_disease download-model",
+                "  python -m cassava_leaf_disease download-model download_model.s3_uri=s3://bucket/key/best.ckpt",
+                "  python -m cassava_leaf_disease download-model download_model.push=true",
+            ]
+        )
+    )
+
+
+def _run_download_model(overrides: list[str]) -> None:
+    cfg = compose_cfg("download_model", overrides)
+
+    from cassava_leaf_disease.data.download_model import download_model_to_dvc
+
+    result = download_model_to_dvc(cfg)
+    if not result.success:
+        raise SystemExit(f"download-model failed: {result.message}")
+    print(f"[download-model] {result.message}")
+    if result.checkpoint_path:
+        print(f"[download-model] Checkpoint: {result.checkpoint_path}")
+        print(f"[download-model] DVC file: {result.checkpoint_path}.dvc")
 
 
 def _sanitize_overrides(overrides: list[str]) -> list[str]:
