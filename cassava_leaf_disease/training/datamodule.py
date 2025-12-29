@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 import pytorch_lightning as pl
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from torch.utils.data import DataLoader
 
 from cassava_leaf_disease.training.dataset import (
@@ -85,12 +85,30 @@ class CassavaDataModule(pl.LightningDataModule):
         ]
         labels = [s.label for s in samples]
 
-        train_samples, val_samples = train_test_split(
-            samples,
-            test_size=float(self.data_cfg.split.val_size),
-            random_state=int(self.data_cfg.split.seed),
-            stratify=labels,
-        )
+        split_strategy = str(self.data_cfg.split.strategy)
+        if split_strategy == "kfold":
+            folds = int(self.data_cfg.split.folds)
+            fold_index = int(self.data_cfg.split.fold_index)
+            if not (0 <= fold_index < folds):
+                raise ValueError("fold_index must be in [0, folds)")
+
+            skf = StratifiedKFold(
+                n_splits=folds,
+                shuffle=True,
+                random_state=int(self.data_cfg.split.seed),
+            )
+            all_indices = list(range(len(samples)))
+            splits = list(skf.split(all_indices, labels))
+            train_idx, val_idx = splits[fold_index]
+            train_samples = [samples[i] for i in train_idx]
+            val_samples = [samples[i] for i in val_idx]
+        else:
+            train_samples, val_samples = train_test_split(
+                samples,
+                test_size=float(self.data_cfg.split.val_size),
+                random_state=int(self.data_cfg.split.seed),
+                stratify=labels,
+            )
 
         self._train_dataset = CassavaCsvDataset(
             train_samples, images_dir=images_dir, transform=train_transform

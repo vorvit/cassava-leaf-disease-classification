@@ -16,6 +16,8 @@ split:
   strategy: holdout
   val_size: 0.2
   seed: ${train.seed}
+  folds: 5
+  fold_index: 0
 
 synthetic:
   enabled: false

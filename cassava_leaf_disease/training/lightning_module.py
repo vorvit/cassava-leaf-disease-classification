@@ -29,6 +29,10 @@ class CassavaClassifier(pl.LightningModule):
         )
         self.loss_fn = nn.CrossEntropyLoss()
         self.acc = torchmetrics.classification.MulticlassAccuracy(num_classes=num_classes)
+        self.f1_macro = torchmetrics.classification.MulticlassF1Score(
+            num_classes=num_classes,
+            average="macro",
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -49,6 +53,13 @@ class CassavaClassifier(pl.LightningModule):
             on_step=False,
             on_epoch=True,
         )
+        self.log(
+            "train/f1_macro",
+            self.f1_macro(preds, y),
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,
+        )
         return loss
 
     def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
@@ -59,6 +70,13 @@ class CassavaClassifier(pl.LightningModule):
 
         self.log("val/loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         self.log("val/acc", self.acc(preds, y), prog_bar=True, on_step=False, on_epoch=True)
+        self.log(
+            "val/f1_macro",
+            self.f1_macro(preds, y),
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+        )
 
     def configure_optimizers(self) -> Any:
         optimizer = torch.optim.AdamW(
