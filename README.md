@@ -27,6 +27,32 @@ python -m uv run pre-commit run -a
 
 Dataset is tracked via **DVC** (data is not stored in git).
 
+### For reviewers (no credentials, public bucket)
+
+If the dataset cache is hosted in a **public-read** bucket, you can pull it without any credentials:
+
+```powershell
+python -m uv run dvc pull
+```
+
+This repo is configured to use `public_http` remote by default:
+
+- `https://storage.yandexcloud.net/mlops-cassava-project/cassava`
+
+### For maintainers (push to S3 with credentials)
+
+To upload/update cache to Yandex Object Storage, use the `yandex_s3` remote and store credentials
+locally in `.dvc/config.local` (never commit secrets):
+
+```powershell
+python -m uv run dvc remote modify --local yandex_s3 access_key_id "YOUR_ACCESS_KEY"
+python -m uv run dvc remote modify --local yandex_s3 secret_access_key "YOUR_SECRET_KEY"
+python -m uv run dvc remote modify --local yandex_s3 endpointurl "https://storage.yandexcloud.net"
+python -m uv run dvc remote modify --local yandex_s3 region "ru-central1"
+
+python -m uv run dvc push -r yandex_s3
+```
+
 Expected local layout:
 
 - `data/cassava/train.csv`

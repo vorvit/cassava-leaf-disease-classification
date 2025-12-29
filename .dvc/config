@@ -1,7 +1,9 @@
 [core]
-    remote = local
+    remote = public_http
 ['remote "local"']
     url = ../dvc_storage
 ['remote "yandex_s3"']
     url = s3://mlops-cassava-project/cassava
     endpointurl = https://storage.yandexcloud.net
+['remote "public_http"']
+    url = https://storage.yandexcloud.net/mlops-cassava-project/cassava
