@@ -86,6 +86,9 @@ Options:
 python -m uv run cassava download-data download_data.force=true
 ```
 
+Note: if the archive is **RAR**, Python stdlib can't extract it. In that case install **7-Zip** (`7z`)
+or use `rarfile` with an unrar backend.
+
 ## Modeling
 
 ### Baseline (implemented)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import tarfile
 import zipfile
 from dataclasses import dataclass
@@ -52,11 +53,8 @@ def _download_and_extract_yadisk_public(public_url: str, data_dir: Path, force: 
     downloads_dir.mkdir(parents=True, exist_ok=True)
 
     archive_path = downloads_dir / _infer_filename_from_url(href)
-    if archive_path.exists() and not force:
-        _extract_archive(archive_path, data_dir=data_dir, force=force)
-        return
-
-    _download_file(href, archive_path)
+    if not archive_path.exists() or force:
+        archive_path = _download_file(href, dst=archive_path)
     _extract_archive(archive_path, data_dir=data_dir, force=force)
 
 
@@ -77,23 +75,54 @@ def _get_yadisk_download_href(public_url: str) -> str:
 
 def _infer_filename_from_url(url: str) -> str:
     # Yandex Disk href is usually a URL with a filename in its path; keep a safe fallback.
-    from urllib.parse import urlparse
+    from urllib.parse import parse_qs, urlparse
 
-    name = Path(urlparse(url).path).name
+    parsed = urlparse(url)
+    name = Path(parsed.path).name
     if not name:
-        return "dataset.zip"
+        qs = parse_qs(parsed.query)
+        for key in ("filename", "file", "name"):
+            values = qs.get(key)
+            if values:
+                name = str(values[0])
+                break
+    if not name:
+        return "dataset.rar"
     return name
 
 
-def _download_file(url: str, dst: Path) -> None:
+def _download_file(url: str, dst: Path) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
     req = Request(url, headers={"User-Agent": "cassava-leaf-disease/0.1"})
-    with urlopen(req, timeout=120) as response, dst.open("wb") as f:
-        while True:
-            chunk = response.read(8 * 1024 * 1024)
-            if not chunk:
-                break
-            f.write(chunk)
+    with urlopen(req, timeout=120) as response:
+        filename = _filename_from_content_disposition(response.headers.get("Content-Disposition"))
+        final_path = dst.parent / filename if filename else dst
+
+        with final_path.open("wb") as f:
+            while True:
+                chunk = response.read(8 * 1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+    if final_path != dst and dst.exists():
+        dst.unlink()
+    return final_path
+
+
+def _filename_from_content_disposition(value: str | None) -> str | None:
+    if not value:
+        return None
+    parts = [p.strip() for p in value.split(";")]
+    for part in parts:
+        if not part.lower().startswith("filename="):
+            continue
+        raw = part.split("=", 1)[1].strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'"}:
+            raw = raw[1:-1]
+        name = Path(raw).name
+        return name or None
+    return None
 
 
 def _extract_archive(archive_path: Path, data_dir: Path, force: bool) -> None:
@@ -109,9 +138,11 @@ def _extract_archive(archive_path: Path, data_dir: Path, force: bool) -> None:
         elif tarfile.is_tarfile(archive_path):
             with tarfile.open(archive_path) as tf:
                 tf.extractall(tmp_dir)
+        elif _is_rarfile(archive_path):
+            _extract_rar(archive_path, tmp_dir)
         else:
             raise ValueError(
-                f"Unsupported archive format: {archive_path.name}. Expected zip or tar.*"
+                f"Unsupported archive format: {archive_path.name}. Expected zip/tar/rar."
             )
 
         extracted_root = _pick_extracted_root(tmp_dir)
@@ -126,6 +157,45 @@ def _pick_extracted_root(tmp_dir: Path) -> Path:
     if len(entries) == 1 and entries[0].is_dir():
         return entries[0]
     return tmp_dir
+
+
+def _is_rarfile(path: Path) -> bool:
+    # Magic bytes: Rar!\x1A\x07\x00 (RAR4) or Rar!\x1A\x07\x01\x00 (RAR5)
+    try:
+        with path.open("rb") as f:
+            head = f.read(8)
+    except Exception:
+        return False
+    return head.startswith(b"Rar!\x1a\x07")
+
+
+def _extract_rar(archive_path: Path, dst_dir: Path) -> None:
+    """Extract RAR archive using optional backends."""
+    try:
+        import rarfile
+
+        with rarfile.RarFile(str(archive_path)) as rf:
+            rf.extractall(str(dst_dir))
+        return
+    except Exception:
+        pass
+
+    seven_zip = shutil.which("7z") or shutil.which("7za") or shutil.which("7z.exe")
+    if not seven_zip:
+        raise ValueError(
+            "RAR archive detected, but no extractor is available. Install 7-Zip (7z) or "
+            "install Python package `rarfile` and an unrar backend, then retry."
+        )
+
+    cmd = [seven_zip, "x", "-y", f"-o{dst_dir}", str(archive_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise ValueError(
+            "Failed to extract RAR archive via 7-Zip.\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"stdout: {result.stdout}\n"
+            f"stderr: {result.stderr}"
+        )
 
 
 def _move_tree_contents(src: Path, dst: Path, force: bool) -> None:

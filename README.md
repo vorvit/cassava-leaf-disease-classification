@@ -88,6 +88,9 @@ python -m uv run cassava download-data
 python -m uv run cassava download-data download_data.force=true
 ```
 
+Примечание: если архив окажется в формате **RAR**, стандартная библиотека Python его не распакует.
+В этом случае нужен установленный **7-Zip** (`7z`) или `rarfile` + unrar-backend.
+
 ## Моделирование
 
 ### Бейзлайн (реализовано)
