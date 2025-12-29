@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytorch_lightning as pl
@@ -16,6 +17,7 @@ class CassavaClassifier(pl.LightningModule):
         self.save_hyperparameters(logger=False)
 
         self.cfg = cfg
+        self._backbone_frozen = False
         num_classes = int(cfg.data.dataset.num_classes)
         backbone = str(cfg.model.backbone)
 
@@ -27,6 +29,9 @@ class CassavaClassifier(pl.LightningModule):
             num_classes=num_classes,
             drop_rate=float(cfg.model.dropout),
         )
+
+        if bool(getattr(cfg.model, "freeze_backbone", False)):
+            self._freeze_backbone_keep_head_trainable()
 
         train_cfg = getattr(cfg, "train", None)
         loss_cfg = getattr(train_cfg, "loss", None) if train_cfg else None
@@ -44,6 +49,49 @@ class CassavaClassifier(pl.LightningModule):
             num_classes=num_classes,
             average="macro",
         )
+
+    def _iter_head_params(self) -> Iterator[torch.nn.Parameter]:
+        # timm models commonly implement `get_classifier()`.
+        # As fallback, try typical attribute names.
+        getter = getattr(self.model, "get_classifier", None)
+        if callable(getter):
+            head = getter()
+            if isinstance(head, torch.nn.Module):
+                yield from head.parameters()
+                return
+
+        for name in ("classifier", "fc", "head"):
+            head = getattr(self.model, name, None)
+            if isinstance(head, torch.nn.Module):
+                yield from head.parameters()
+                return
+
+    def _freeze_backbone_keep_head_trainable(self) -> None:
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze head params so optimizer isn't empty and model can learn.
+        for param in self._iter_head_params():
+            param.requires_grad = True
+
+        self._backbone_frozen = True
+
+    def on_train_epoch_start(self) -> None:
+        unfreeze_epoch_raw = getattr(self.cfg.model, "unfreeze_epoch", None)
+        if unfreeze_epoch_raw in (None, "null"):
+            return
+
+        if not isinstance(unfreeze_epoch_raw, (int, str)):
+            return
+        try:
+            unfreeze_epoch = int(unfreeze_epoch_raw)
+        except Exception:
+            return
+
+        if self._backbone_frozen and int(self.current_epoch) == unfreeze_epoch:
+            for param in self.model.parameters():
+                param.requires_grad = True
+            self._backbone_frozen = False
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)

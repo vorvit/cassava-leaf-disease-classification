@@ -88,6 +88,10 @@ def train(cfg: Any) -> None:
         default_root_dir=str(outputs_dir),
         logger=loggers,
         callbacks=callbacks,
+        # Lightning enables checkpointing by default (ModelCheckpoint callback).
+        # We explicitly disable it unless the project config asks for checkpoints,
+        # to keep the training run lightweight and avoid writing large artifacts.
+        enable_checkpointing=bool(getattr(cfg.train, "save_checkpoints", False)),
         deterministic=True,
     )
 
