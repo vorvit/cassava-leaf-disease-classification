@@ -463,6 +463,16 @@ def test_serving_infer_auto_discovers_latest_checkpoint(
         infer_mod, "dvc_pull", lambda *a, **k: SimpleNamespace(success=True, message="ok")
     )
 
+    # Mock Path(__file__) to return a path that resolves to tmp_path as repo root
+    # Create a fake infer.py path structure: tmp_path/cassava_leaf_disease/serving/infer.py
+    fake_infer_file = tmp_path / "cassava_leaf_disease" / "serving" / "infer.py"
+    fake_infer_file.parent.mkdir(parents=True, exist_ok=True)
+    fake_infer_file.touch()
+
+    # Patch Path(__file__) resolution by mocking the infer function's __file__ attribute
+    # Since we can't easily patch __file__ in the module, we'll use absolute paths in config
+    # which the code now supports
+
     class DummyModel:
         def __call__(self, inputs):
             return torch.zeros((1, 5))
@@ -474,10 +484,13 @@ def test_serving_infer_auto_discovers_latest_checkpoint(
         lambda *a, **k: (lambda image: {"image": torch.zeros((3, 8, 8))}),
     )
 
+    # Use absolute paths in config to work with the new repo_root resolution
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(outputs_dir)),
+        paths=SimpleNamespace(
+            data_dir=str(tmp_path.resolve()), outputs_dir=str(outputs_dir.resolve())
+        ),
         infer=SimpleNamespace(
-            image_path=str(img_path),
+            image_path=str(img_path.resolve()),  # Absolute path
             checkpoint_path=None,  # Auto-discover
             checkpoint_s3_uri=None,
             device="cpu",
@@ -486,13 +499,49 @@ def test_serving_infer_auto_discovers_latest_checkpoint(
         data=SimpleNamespace(dataset=SimpleNamespace(class_names=["a", "b", "c", "d", "e"])),
         augment=SimpleNamespace(image_size=8, mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2]),
     )
+
+    # Mock repo_root calculation by patching Path(__file__) in the infer function
+    # Since infer uses Path(__file__).resolve().parents[2], we need to mock __file__
+    original_infer = infer_mod.infer
+
+    def patched_infer(cfg):
+        # Temporarily replace Path resolution logic
+        # Create a context where __file__ would resolve to fake_infer_file
+        # We'll patch the infer function to use tmp_path as repo_root
+        # Actually, simpler: just use absolute paths which are now supported
+        pass
+        return original_infer(cfg)
+
+    # Actually, since we're using absolute paths, the code should work as-is
+    # But we need to mock repo_root. Let's patch it directly in the infer function
+    import pathlib
+
+    original_path_file = pathlib.Path
+
+    def mock_path_file(path_str):
+        if path_str == fake_infer_file:
+
+            class MockPath:
+                def __init__(self, p):
+                    self._path = pathlib.Path(p)
+
+                def resolve(self):
+                    return self._path.resolve()
+
+                def parents(self):
+                    return self._path.parents
+
+            return MockPath(fake_infer_file)
+        return original_path_file(path_str)
+
+    # Actually, simpler approach: just use absolute paths which the code now supports
     result = infer_mod.infer(cfg)
     assert "predicted_class_id" in result
     out = capsys.readouterr().out
     # Should mention auto-discovery
     assert "Auto-discovered latest checkpoint" in out
     # Should use the most recent checkpoint (run2) - check normalized path
-    normalized_path = str(run2_ckpt).replace("\\", "/")
+    normalized_path = str(run2_ckpt.resolve()).replace("\\", "/")
     assert normalized_path in out.replace(
         "\\", "/"
     ) or "2024-01-02/15-30-00/checkpoints/best.ckpt" in out.replace("\\", "/")

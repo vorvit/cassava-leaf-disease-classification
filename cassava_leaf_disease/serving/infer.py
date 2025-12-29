@@ -94,6 +94,9 @@ def _load_model(cfg: Any, ckpt_path: Path, device: torch.device) -> CassavaClass
 
 def infer(cfg: Any) -> dict[str, Any]:
     """Run inference for a single image path."""
+    # Determine project root (parent of cassava_leaf_disease package directory)
+    repo_root = Path(__file__).resolve().parents[2]
+
     # Pull data via DVC (same as training).
     data_dir = str(cfg.paths.data_dir)
     pull_result = dvc_pull(targets=[data_dir])
@@ -106,9 +109,18 @@ def infer(cfg: Any) -> dict[str, Any]:
             "infer.image_path is required (e.g. infer.image_path=data/cassava/train_images/xxx.jpg)"
         )
 
-    image_path = Path(str(image_path_raw))
+    # Resolve image path relative to project root (or use as-is if absolute)
+    image_path_str = str(image_path_raw)
+    image_path_raw_path = Path(image_path_str)
+    if image_path_raw_path.is_absolute():
+        image_path = image_path_raw_path.resolve()
+    else:
+        image_path = (repo_root / image_path_str).resolve()
     if not image_path.exists():
-        raise SystemExit(f"Image not found: {image_path}")
+        raise SystemExit(
+            f"Image not found: {image_path} "
+            f"(resolved from {image_path_str} relative to {repo_root})"
+        )
 
     # Resolve checkpoint path with fallback chain:
     # 1. Explicit checkpoint_path from config (if set)
@@ -125,13 +137,24 @@ def infer(cfg: Any) -> dict[str, Any]:
         ckpt_pull_result = dvc_pull(targets=[ckpt_path_str])
         if not ckpt_pull_result.success:
             print(f"[dvc] checkpoint pull failed (continuing): {ckpt_pull_result.message}")
-        ckpt_path = Path(ckpt_path_str)
+        # Resolve checkpoint path relative to project root (or use as-is if absolute)
+        ckpt_path_raw_path = Path(ckpt_path_str)
+        if ckpt_path_raw_path.is_absolute():
+            ckpt_path = ckpt_path_raw_path.resolve()
+        else:
+            ckpt_path = (repo_root / ckpt_path_str).resolve()
         if ckpt_path.exists():
             print(f"[infer] Using checkpoint from config: {ckpt_path}")
 
     # Step 2: If not found, try auto-discovery of latest checkpoint in outputs/
     if ckpt_path is None or not ckpt_path.exists():
-        outputs_dir = Path(str(cfg.paths.outputs_dir))
+        # Resolve outputs_dir relative to project root (or use as-is if absolute)
+        outputs_dir_str = str(cfg.paths.outputs_dir)
+        outputs_dir_raw_path = Path(outputs_dir_str)
+        if outputs_dir_raw_path.is_absolute():
+            outputs_dir = outputs_dir_raw_path.resolve()
+        else:
+            outputs_dir = (repo_root / outputs_dir_str).resolve()
         latest_ckpt = _find_latest_checkpoint(outputs_dir)
         if latest_ckpt is not None:
             ckpt_path = latest_ckpt
