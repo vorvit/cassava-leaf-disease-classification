@@ -211,3 +211,9 @@ dvc_storage/
 
 # Local outputs/artifacts
 outputs/
+
+# Node (used by some pre-commit hooks)
+node_modules/
+
+# Local MLflow state (sqlite db + artifacts) when running via docker compose
+/mlflow/

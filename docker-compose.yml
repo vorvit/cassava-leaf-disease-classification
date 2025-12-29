@@ -1,0 +1,9 @@
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/mlflow/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mlflow:/mlflow
