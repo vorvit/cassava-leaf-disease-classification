@@ -1,0 +1,122 @@
+"""PyTorch Lightning DataModule."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import pytorch_lightning as pl
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader
+
+from cassava_leaf_disease.training.dataset import (
+    CassavaCsvDataset,
+    CassavaSample,
+    SyntheticCassavaDataset,
+)
+from cassava_leaf_disease.training.transforms import build_transforms
+
+
+@dataclass(frozen=True)
+class DataPaths:
+    train_csv: Path
+    images_dir: Path
+
+
+class CassavaDataModule(pl.LightningDataModule):
+    def __init__(self, cfg: Any) -> None:
+        super().__init__()
+        self.cfg = cfg
+        self.data_cfg = cfg.data
+        self.augment_cfg = cfg.augment
+
+        self._train_dataset = None
+        self._val_dataset = None
+
+    def prepare_data(self) -> None:
+        # DVC pull is handled at a higher level (CLI), to keep this module reusable.
+        return
+
+    def setup(self, stage: str | None = None) -> None:
+        num_classes = int(self.data_cfg.dataset.num_classes)
+
+        train_transform = build_transforms(self.augment_cfg, is_train=True)
+        val_transform = build_transforms(self.augment_cfg, is_train=False)
+
+        train_csv = Path(self.data_cfg.paths.train_csv)
+        images_dir = Path(self.data_cfg.paths.images_dir)
+
+        synthetic_cfg = getattr(self.data_cfg, "synthetic", None)
+        synthetic_enabled = (
+            bool(getattr(synthetic_cfg, "enabled", False)) if synthetic_cfg else False
+        )
+        fallback_if_missing = (
+            bool(getattr(synthetic_cfg, "fallback_if_missing", True)) if synthetic_cfg else True
+        )
+
+        data_missing = not train_csv.exists() or not images_dir.exists()
+        if synthetic_enabled or (fallback_if_missing and data_missing):
+            image_size = int(self.augment_cfg.image_size)
+            seed = (
+                int(getattr(synthetic_cfg, "seed", self.cfg.train.seed))
+                if synthetic_cfg
+                else int(self.cfg.train.seed)
+            )
+            train_size = int(getattr(synthetic_cfg, "train_size", 256)) if synthetic_cfg else 256
+            val_size = int(getattr(synthetic_cfg, "val_size", 64)) if synthetic_cfg else 64
+
+            self._train_dataset = SyntheticCassavaDataset(
+                size=train_size, num_classes=num_classes, image_size=image_size, seed=seed
+            )
+            self._val_dataset = SyntheticCassavaDataset(
+                size=val_size, num_classes=num_classes, image_size=image_size, seed=seed + 1
+            )
+            return
+
+        df = pd.read_csv(train_csv)
+        if "image_id" not in df.columns or "label" not in df.columns:
+            raise ValueError("Expected columns: image_id,label in train.csv")
+
+        samples = [
+            CassavaSample(image_id=str(row.image_id), label=int(row.label))
+            for row in df.itertuples()
+        ]
+        labels = [s.label for s in samples]
+
+        train_samples, val_samples = train_test_split(
+            samples,
+            test_size=float(self.data_cfg.split.val_size),
+            random_state=int(self.data_cfg.split.seed),
+            stratify=labels,
+        )
+
+        self._train_dataset = CassavaCsvDataset(
+            train_samples, images_dir=images_dir, transform=train_transform
+        )
+        self._val_dataset = CassavaCsvDataset(
+            val_samples, images_dir=images_dir, transform=val_transform
+        )
+
+    def train_dataloader(self) -> DataLoader:
+        if self._train_dataset is None:
+            raise RuntimeError("Call setup() before requesting dataloaders.")
+        return DataLoader(
+            self._train_dataset,
+            batch_size=int(self.cfg.train.batch_size),
+            shuffle=True,
+            num_workers=int(self.cfg.train.num_workers),
+            pin_memory=True,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        if self._val_dataset is None:
+            raise RuntimeError("Call setup() before requesting dataloaders.")
+        return DataLoader(
+            self._val_dataset,
+            batch_size=int(self.cfg.train.batch_size),
+            shuffle=False,
+            num_workers=int(self.cfg.train.num_workers),
+            pin_memory=True,
+        )

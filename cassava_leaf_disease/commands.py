@@ -20,6 +20,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     command = args[0]
+    command_args = args[1:]
+
+    if command == "train":
+        _run_train(command_args)
+        return
+
+    if command == "infer":
+        raise SystemExit("infer is not implemented yet.")
+
+    if command in {"download-data", "download_data"}:
+        raise SystemExit("download-data is not implemented yet.")
+
     raise SystemExit(f"Unknown command: {command!r}. Try `python -m cassava_leaf_disease --help`.")
 
 
@@ -39,3 +51,21 @@ def _print_help() -> None:
             ]
         )
     )
+
+
+def _run_train(overrides: list[str]) -> None:
+    # Lazy imports to keep CLI startup fast.
+    from pathlib import Path
+
+    from hydra import compose, initialize_config_dir
+
+    # commands.py lives in `<repo>/cassava_leaf_disease/commands.py`
+    # so `<repo>/configs` is `parents[1] / "configs"`.
+    config_dir = (Path(__file__).resolve().parents[1] / "configs").resolve()
+
+    with initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
+        cfg = compose(config_name="train", overrides=overrides)
+
+    from cassava_leaf_disease.training.train import train
+
+    train(cfg)

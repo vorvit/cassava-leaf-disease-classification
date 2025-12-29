@@ -16,3 +16,10 @@ split:
   strategy: holdout
   val_size: 0.2
   seed: ${train.seed}
+
+synthetic:
+  enabled: false
+  fallback_if_missing: true
+  train_size: 256
+  val_size: 64
+  seed: ${train.seed}
