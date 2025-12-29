@@ -1,0 +1,6 @@
+outs:
+- md5: 6368ca24f3ef0eb34a04dc113d609161.dir
+  size: 2560132797
+  nfiles: 21399
+  hash: md5
+  path: cassava

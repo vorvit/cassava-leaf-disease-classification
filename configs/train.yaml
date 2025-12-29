@@ -21,6 +21,7 @@ train:
   devices: auto
   log_every_n_steps: 10
   fast_dev_run: false
+  save_checkpoints: false
 
 hydra:
   run:
