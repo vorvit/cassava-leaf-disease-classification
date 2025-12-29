@@ -200,10 +200,18 @@ python -m uv run python -m cassava_leaf_disease train data.split.strategy=kfold 
 .\scripts\install_torch_cuda.ps1
 ```
 
-Запускать на GPU нужно через venv Python (и на Windows использовать `train.num_workers=0`):
+Запускать на GPU нужно через venv Python (и на Windows использовать `train.num_workers=0`).
+Важно: `uv run` по умолчанию делает sync окружения и может вернуть CPU‑torch из `uv.lock`.
+Если всё-таки хотите запускать через `uv run`, используйте `--no-sync`.
 
 ```powershell
 .\.venv\Scripts\python.exe -m cassava_leaf_disease train data.synthetic.enabled=false data.limits.max_train_samples=5000 data.limits.max_val_samples=1000 train.epochs=2 train.batch_size=64 train.num_workers=0 train.precision=16-mixed logger.enabled=true
+```
+
+Эквивалент через `uv run` (без пересинхронизации окружения):
+
+```powershell
+python -m uv run --no-sync cassava train train.accelerator=gpu train.devices=1 train.num_workers=0 train.precision=16-mixed
 ```
 
 ## Inference (FastAPI, базовая версия)

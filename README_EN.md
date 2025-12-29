@@ -204,6 +204,13 @@ Run training via venv Python (and use `train.num_workers=0` on Windows):
 .\.venv\Scripts\python.exe -m cassava_leaf_disease train data.synthetic.enabled=false data.limits.max_train_samples=5000 data.limits.max_val_samples=1000 train.epochs=2 train.batch_size=64 train.num_workers=0 train.precision=16-mixed logger.enabled=true
 ```
 
+Important: `uv run` syncs the environment by default and may revert CUDA torch back to CPU-only torch from `uv.lock`.
+If you want to use `uv run`, add `--no-sync`:
+
+```powershell
+python -m uv run --no-sync cassava train train.accelerator=gpu train.devices=1 train.num_workers=0 train.precision=16-mixed
+```
+
 ## Inference (FastAPI, minimal)
 
 Run:
