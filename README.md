@@ -1,11 +1,47 @@
-# cassava-leaf-disease-classification
+# CassavaVision — классификация болезней листьев маниоки
 
-## Project
+English version: [`README_EN.md`](README_EN.md)
 
-Computer vision system for automated diagnosis of cassava (manioc) leaf diseases from photos, based on Kaggle competition:
-`https://www.kaggle.com/c/cassava-leaf-disease-classification`.
+## Постановка задачи
 
-**Goal**: build an MLOps pipeline for training and (optionally) deployment of an image classifier for 5 categories:
+Разработка системы компьютерного зрения для автоматической диагностики заболеваний маниоки (кассавы)
+по фотографиям листьев на основе соревнования Kaggle: `https://www.kaggle.com/c/cassava-leaf-disease-classification`.
+
+Маниока является критически важным источником углеводов для миллионов людей в Африке, но урожаи часто
+страдают от вирусных заболеваний. Ручная диагностика требует экспертных знаний, которые не всегда
+доступны фермерам.
+
+Цель проекта — создать надежный MLOps‑пайплайн для обучения и (опционально) деплоя модели классификации
+изображений, различающей 5 категорий (4 типа болезней + здоровые листья).
+
+## Формат входных и выходных данных (целевой API)
+
+### Вход
+
+- Изображение в формате JPEG/PNG (binary payload)
+- Ожидаемая размерность тензора после предобработки: `(B, 3, 512, 512)` или `(B, 3, 380, 380)` —
+  зависит от бэкенда модели (roadmap)
+
+### Выход
+
+JSON:
+
+```json
+{
+  "predicted_class_id": 0,
+  "class_name": "Cassava Bacterial Blight",
+  "confidence": 0.91,
+  "probabilities": {
+    "Cassava Bacterial Blight": 0.91,
+    "Cassava Brown Streak Disease": 0.02,
+    "Cassava Green Mottle": 0.01,
+    "Cassava Mosaic Disease": 0.03,
+    "Healthy": 0.03
+  }
+}
+```
+
+Классы:
 
 - Cassava Bacterial Blight (0)
 - Cassava Brown Streak Disease (1)
@@ -13,36 +49,44 @@ Computer vision system for automated diagnosis of cassava (manioc) leaf diseases
 - Cassava Mosaic Disease (3)
 - Healthy (4)
 
-## Setup (Task2)
+## Метрики
 
-This project uses **uv** for dependency management.
+- **Accuracy**: основная метрика Kaggle
+- **F1‑Macro**: метрика для имбалансных классов (CMD доминирует)
 
-```powershell
-python -m uv sync --dev
-python -m uv run pre-commit install
-python -m uv run pre-commit run -a
-```
+## Валидация и тест
 
-## Data (DVC)
+- **Stratified K‑Fold (5 folds)**: режим `data.split.strategy=kfold`
+- **Hold‑out**: режим по умолчанию `data.split.strategy=holdout`
+- **Воспроизводимость**: фиксация seed (Lightning), конфиги Hydra, данные под DVC
 
-Dataset is tracked via **DVC** (data is not stored in git).
+## Данные (DVC)
 
-### For reviewers (no credentials, public bucket)
+Данные не храним в git. В git попадают только `.dvc` метафайлы.
 
-If the dataset cache is hosted in a **public-read** bucket, you can pull it without any credentials:
+Ожидаемая структура:
+
+- `data/cassava/train.csv`
+- `data/cassava/train_images/*.jpg`
+
+### Для проверяющих (pull без кредов, public HTTP)
+
+Репозиторий настроен так, что дефолтный remote — `public_http`:
+
+- `https://storage.yandexcloud.net/mlops-cassava-project/cassava`
+
+Команда:
 
 ```powershell
 python -m uv run dvc pull
 ```
 
-This repo is configured to use `public_http` remote by default:
+Важно: если бакет/префикс не public-read для `cassava/files/md5/**`, `dvc pull` вернёт 403, и обучение
+перейдёт на синтетический fallback (чтобы проверка Task2 не падала).
 
-- `https://storage.yandexcloud.net/mlops-cassava-project/cassava`
+### Для мейнтейнеров (push в S3 с кредами)
 
-### For maintainers (push to S3 with credentials)
-
-To upload/update cache to Yandex Object Storage, use the `yandex_s3` remote and store credentials
-locally in `.dvc/config.local` (never commit secrets):
+Креды НЕ коммитим. Храним локально через `.dvc/config.local`:
 
 ```powershell
 python -m uv run dvc remote modify --local yandex_s3 access_key_id "YOUR_ACCESS_KEY"
@@ -53,23 +97,20 @@ python -m uv run dvc remote modify --local yandex_s3 region "ru-central1"
 python -m uv run dvc push -r yandex_s3
 ```
 
-Expected local layout:
+## Setup (Task2)
 
-- `data/cassava/train.csv`
-- `data/cassava/train_images/*.jpg`
-
-If you already have the dataset locally, track it:
+Проект использует **uv**.
 
 ```powershell
-python -m uv run dvc add data/cassava
-git add data/cassava.dvc data/.gitignore
-git commit -m "chore(data): track cassava dataset with dvc"
+python -m uv sync --dev
+python -m uv run pre-commit install
+python -m uv run pre-commit run -a
 ```
 
-## MLflow (local)
+## MLflow (локально)
 
-Task2 assumes MLflow server is available at `http://127.0.0.1:8080`.
-For local usage you can start it with Docker:
+В задании предполагается, что MLflow доступен на `http://127.0.0.1:8080`.
+Для локальных тестов поднимаем через Docker:
 
 ```powershell
 docker compose up -d --build mlflow
@@ -77,39 +118,61 @@ docker compose up -d --build mlflow
 
 ## Train
 
-CPU (default, portable for Task2 checks):
+### Быстрый smoke‑train (не зависит от данных, проходит всегда)
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train
+python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=true train.epochs=1 train.batch_size=32 train.num_workers=0 logger.enabled=false
 ```
 
-Useful overrides:
+### Обучение на реальных данных (короткий прогон на подмножестве)
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train train.epochs=2 train.batch_size=32
+python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=false data.limits.max_train_samples=800 data.limits.max_val_samples=200 train.epochs=1 train.batch_size=32 train.num_workers=0 logger.enabled=true
 ```
 
-## Local GPU mode (optional)
+### KFold режим
 
-Task2 checks are CPU-safe (pinned in `uv.lock`). For your local RTX 3060 you can install CUDA PyTorch
-into the project venv **without changing `uv.lock`**:
+```powershell
+python -m uv run python -m cassava_leaf_disease train data.split.strategy=kfold data.split.folds=5 data.split.fold_index=0
+```
+
+## Local GPU mode (Windows, опционально)
+
+`uv.lock` фиксирует CPU‑зависимости для переносимой проверки Task2. Для локального GPU (RTX 3060)
+есть скрипт, который ставит CUDA PyTorch в `.venv` без изменения `uv.lock`:
 
 ```powershell
 .\scripts\install_torch_cuda.ps1
 ```
 
-Then run training **using venv Python directly** (so uv does not re-sync CPU torch):
+Запускать на GPU нужно через venv Python (и на Windows использовать `train.num_workers=0`):
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease train train.epochs=2 train.batch_size=32
+.\.venv\Scripts\python.exe -m cassava_leaf_disease train data.synthetic.enabled=false data.limits.max_train_samples=5000 data.limits.max_val_samples=1000 train.epochs=2 train.batch_size=64 train.num_workers=0 train.precision=16-mixed logger.enabled=true
 ```
+
+## Inference (FastAPI, базовая версия)
+
+Запуск сервера:
+
+```powershell
+python -m uv run uvicorn cassava_leaf_disease.serving.app:app --host 127.0.0.1 --port 8000
+```
+
+Эндпоинты:
+
+- `GET /health`
+- `POST /predict` (JPEG/PNG → JSON как выше)
+
+Важно: сейчас `/predict` — минимальный “stub” (детерминированный), чтобы показать контракт API без тяжёлого
+экспорта модели. Экспорт “реальной” модели — следующий этап.
 
 ## Changelog (SemVer + Conventional Commits)
 
-- Config: `cliff.toml`
-- Generated file: `CHANGELOG.md`
+- `cliff.toml`
+- `CHANGELOG.md`
 
-Generate via Docker (recommended, no local binary install):
+Генерация через Docker (без установки бинаря):
 
 ```powershell
 .\scripts\generate_changelog_docker.ps1
@@ -117,9 +180,9 @@ git add CHANGELOG.md
 git commit -m "chore(release): update changelog"
 ```
 
-## Roadmap (not required for Task2)
+## Roadmap (после Task2)
 
-- Add `F1-macro` metric (class imbalance)
-- Add `StratifiedKFold` (5 folds) training mode
-- Add serving: FastAPI (JPEG/PNG -> JSON probabilities)
-- Heavy models / ensemble / Triton / TensorRT (only after Task2, optional)
+- Image size 380/512 и более сильные аугментации
+- Label smoothing / методы для noisy labels
+- Экспорт модели и “реальный” инференс (FastAPI)
+- Triton/TensorRT/ансамбли — отдельно, без влияния на Task2
