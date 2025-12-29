@@ -1,0 +1,138 @@
+"""Thin wrapper CLI using python-fire.
+
+This module does NOT replace Hydra. It forwards a small, user-friendly CLI to the
+existing Hydra-based CLI (`cassava_leaf_disease.commands`), by generating Hydra overrides.
+
+Examples:
+  cassava-fire train --epochs 1 --synthetic --no-mlflow
+  cassava-fire train --epochs 2 --batch_size 32 train.precision=16-mixed
+  cassava-fire infer --image data/cassava/train_images/xxx.jpg --ckpt outputs/.../best.ckpt
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+
+def _bool_override(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _normalize_fire_args(args: list[str]) -> list[str]:
+    """Normalize user-friendly CLI flags into python-fire-friendly ones.
+
+    Fire uses Python identifiers for flags (underscores). Users often type dashes.
+    We also support a couple of common `--no-xxx` negations.
+    """
+    mapping = {
+        "--no-mlflow": "--mlflow=false",
+        "--no_mlflow": "--mlflow=false",
+        "--mlflow": "--mlflow=true",
+        "--no-synthetic": "--synthetic=false",
+        "--no_synthetic": "--synthetic=false",
+        "--synthetic": "--synthetic=true",
+        "--image-path": "--image",
+        "--checkpoint-path": "--ckpt",
+    }
+    return [mapping.get(a, a) for a in args]
+
+
+class CassavaFireCLI:
+    """Fire CLI that forwards to Hydra commands.
+
+    The goal is shorter and safer day-to-day commands, while keeping Hydra as the single
+    source of truth for configuration.
+    """
+
+    def train(
+        self,
+        epochs: int | None = None,
+        batch_size: int | None = None,
+        lr: float | None = None,
+        precision: str | None = None,
+        synthetic: bool | None = None,
+        mlflow: bool | None = None,
+        num_workers: str | int | None = None,
+        *overrides: str,
+    ) -> None:
+        """Run training (forwards to Hydra CLI).
+
+        All keyword args are converted into Hydra overrides.
+        You can also pass extra raw Hydra overrides as positional args.
+
+        Examples:
+          cassava-fire train --epochs 1 --synthetic --no-mlflow
+          cassava-fire train --epochs 2 --batch_size 32 train.precision=16-mixed
+        """
+        from cassava_leaf_disease.commands import main as hydra_main
+
+        hydra_overrides: list[str] = []
+        if epochs is not None:
+            hydra_overrides.append(f"train.epochs={int(epochs)}")
+        if batch_size is not None:
+            hydra_overrides.append(f"train.batch_size={int(batch_size)}")
+        if lr is not None:
+            hydra_overrides.append(f"train.lr={float(lr)}")
+        if precision is not None:
+            hydra_overrides.append(f"train.precision={precision!s}")
+        if num_workers is not None:
+            hydra_overrides.append(f"train.num_workers={num_workers}")
+        if synthetic is not None:
+            hydra_overrides.append(f"data.synthetic.enabled={_bool_override(bool(synthetic))}")
+        if mlflow is not None:
+            hydra_overrides.append(f"logger.enabled={_bool_override(bool(mlflow))}")
+
+        hydra_main(["train", *hydra_overrides, *overrides])
+
+    def infer(
+        self,
+        image: str | None = None,
+        ckpt: str | None = None,
+        device: str | None = None,
+        top_k: int | None = None,
+        *overrides: str,
+    ) -> None:
+        """Run inference (forwards to Hydra CLI).
+
+        Examples:
+          cassava-fire infer --image data/cassava/train_images/xxx.jpg --ckpt outputs/.../best.ckpt
+        """
+        from cassava_leaf_disease.commands import main as hydra_main
+
+        hydra_overrides: list[str] = []
+        if image is not None:
+            hydra_overrides.append(f"infer.image_path={image}")
+        if ckpt is not None:
+            hydra_overrides.append(f"infer.checkpoint_path={ckpt}")
+        if device is not None:
+            hydra_overrides.append(f"infer.device={device}")
+        if top_k is not None:
+            hydra_overrides.append(f"infer.top_k={int(top_k)}")
+
+        hydra_main(["infer", *hydra_overrides, *overrides])
+
+    def raw(self, command: str, *overrides: str) -> None:
+        """Forward any Hydra command verbatim.
+
+        Example:
+          cassava-fire raw train train.epochs=1 logger.enabled=false
+        """
+        from cassava_leaf_disease.commands import main as hydra_main
+
+        hydra_main([str(command), *overrides])
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Entry point for `cassava-leaf-disease-fire` and `python -m ...fire_cli`."""
+    import sys
+
+    import fire
+
+    args = sys.argv[1:] if argv is None else list(argv)
+    args = _normalize_fire_args(args)
+    # Fire expects to receive argv without the program name.
+    fire.Fire(CassavaFireCLI, command=args, name="cassava-fire")
+
+
+if __name__ == "__main__":
+    main()
