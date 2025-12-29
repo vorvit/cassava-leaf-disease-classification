@@ -1308,7 +1308,7 @@ def test_train_max_time_passed_to_trainer(monkeypatch: pytest.MonkeyPatch) -> No
         }
     )
     train_mod.train(cfg)
-    assert captured_kwargs.get("max_time") == "00:25:00"
+    assert captured_kwargs.get("max_time") == "00:00:25:00"
 
 
 def test_train_upload_metrics_to_s3(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

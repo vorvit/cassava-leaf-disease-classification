@@ -75,9 +75,10 @@ def test_train_helper_ensure_s3_env_from_dotenv(tmp_path, monkeypatch: pytest.Mo
 def test_train_helper_normalize_max_time() -> None:
     assert _normalize_max_time(None) is None
     assert _normalize_max_time("null") is None
-    assert _normalize_max_time("00:25:00") == "00:25:00"
-    assert _normalize_max_time(25) == "00:25:00"
-    assert _normalize_max_time(0) == "00:00:00"
-    assert _normalize_max_time(-5) == "00:00:00"
-    assert _normalize_max_time(125) == "02:05:00"
+    assert _normalize_max_time("00:25:00") == "00:00:25:00"
+    assert _normalize_max_time("00:00:25:00") == "00:00:25:00"
+    assert _normalize_max_time(25) == "00:00:25:00"
+    assert _normalize_max_time(0) == "00:00:00:00"
+    assert _normalize_max_time(-5) == "00:00:00:00"
+    assert _normalize_max_time(125) == "00:02:05:00"
     assert _normalize_max_time(object()) is None

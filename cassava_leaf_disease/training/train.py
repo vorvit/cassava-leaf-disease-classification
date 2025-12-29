@@ -73,13 +73,23 @@ def _normalize_max_time(value: object) -> str | None:
     if isinstance(value, str) and value.lower() == "null":
         return None
     if isinstance(value, str):
-        return value.strip()
+        text = value.strip()
+        # Lightning Timer expects DD:HH:MM:SS.
+        # Allow HH:MM:SS for convenience and normalize it.
+        if text.count(":") == 2:
+            return f"00:{text}"
+        return text
     if isinstance(value, (int, float)):
         total_minutes = int(value)
         total_minutes = max(0, total_minutes)
-        hours = total_minutes // 60
-        minutes = total_minutes % 60
-        return f"{hours:02d}:{minutes:02d}:00"
+        total_seconds = total_minutes * 60
+        days = total_seconds // (24 * 3600)
+        remainder = total_seconds % (24 * 3600)
+        hours = remainder // 3600
+        remainder = remainder % 3600
+        minutes = remainder // 60
+        seconds = remainder % 60
+        return f"{days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
     return None
 
 
