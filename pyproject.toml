@@ -32,10 +32,16 @@ dependencies = [
   "fastapi>=0.110.0",
   "python-multipart>=0.0.9",
   "uvicorn>=0.29.0",
+  # Optional thin CLI wrapper (forwards to Hydra CLI)
+  "fire>=0.6.0",
 ]
 
 [project.scripts]
 cassava-leaf-disease = "cassava_leaf_disease.commands:main"
+cassava-leaf-disease-fire = "cassava_leaf_disease.fire_cli:main"
+# Short aliases (virtualenv-local, convenient in day-to-day work)
+cassava = "cassava_leaf_disease.commands:main"
+cassava-fire = "cassava_leaf_disease.fire_cli:main"
 
 [dependency-groups]
 dev = [
