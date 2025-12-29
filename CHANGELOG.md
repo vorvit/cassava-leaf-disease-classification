@@ -46,6 +46,8 @@ All notable changes to this project will be documented in this file.
 
 - update changelog (b38b7c5)
 
+- update changelog (8fe693c)
+
 ### Docs
 
 - expand README for task2 workflow (4736d10)
@@ -107,6 +109,8 @@ All notable changes to this project will be documented in this file.
 - make fire positional args map to hydra overrides (3c517f2)
 
 - normalize max_time to DD:HH:MM:SS for Lightning Timer (2882636)
+
+- resolve paths relative to project root (7023cc3)
 
 ### refactor
 
