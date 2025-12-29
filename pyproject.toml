@@ -56,8 +56,28 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
-ignore = ["N999"]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF", "D"]
+ignore = [
+  "N999",
+  # Don't require docstrings everywhere (keep config non-noisy)
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+  # Conflicts / preferences for Google style
+  "D203",
+  "D213",
+  # Too opinionated / noisy for this project
+  "D401",
+  "D417",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.format]
 quote-style = "double"
