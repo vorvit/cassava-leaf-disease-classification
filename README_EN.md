@@ -185,19 +185,125 @@ After installing CUDA PyTorch, run training via venv Python directly (see Train 
 
 ### Train
 
-Model training is launched via the `train` CLI command. The project supports several training modes.
+Model training can be launched via CLI in two ways: through **Fire CLI** (convenient syntax) or through **Hydra CLI** (full control). All paths are relative to the project root.
 
-#### Quick smoke test (data-independent, always works)
+#### Fire CLI (recommended for daily work)
 
-To verify pipeline functionality without real data:
+Fire CLI provides convenient syntax with named parameters. All commands are run from the project root (relative paths).
+
+**Quick smoke test (synthetic data):**
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=true train.epochs=1 train.batch_size=32 train.num_workers=0 logger.enabled=false
+python -m uv run cassava-fire train --epochs 1 --synthetic --no-mlflow --num_workers 0
 ```
 
-#### Training on real data (short run on a subset)
+**Training on real data (short run with checkpoint saving):**
 
-For quick verification on real data (with checkpoint saving for subsequent inference):
+```powershell
+python -m uv run cassava-fire train `
+  --epochs 1 `
+  --batch_size 32 `
+  --num_workers 0 `
+  --mlflow `
+  train.save_checkpoints=true `
+  data.synthetic.enabled=false `
+  data.limits.max_train_samples=800 `
+  data.limits.max_val_samples=200
+```
+
+**Full training on real data:**
+
+```powershell
+python -m uv run cassava-fire train `
+  --epochs 50 `
+  --batch_size 64 `
+  --num_workers 0 `
+  --mlflow `
+  train.save_checkpoints=true `
+  train.accelerator=cpu `
+  data.synthetic.enabled=false
+```
+
+**Training on GPU (via venv, after installing CUDA PyTorch):**
+
+```powershell
+.\.venv\Scripts\python.exe -m cassava_leaf_disease.fire_cli train `
+  --epochs 50 `
+  --batch_size 64 `
+  --num_workers 0 `
+  --precision 16-mixed `
+  --mlflow `
+  train.save_checkpoints=true `
+  train.accelerator=gpu `
+  train.devices=1 `
+  data.synthetic.enabled=false
+```
+
+**KFold mode (stratified cross-validation):**
+
+```powershell
+python -m uv run cassava-fire train `
+  --epochs 10 `
+  --mlflow `
+  train.save_checkpoints=true `
+  data.synthetic.enabled=false `
+  data.split.strategy=kfold `
+  data.split.folds=5 `
+  data.split.fold_index=0
+```
+
+**Fire CLI parameters for `train` command:**
+
+| Parameter       | Type         | Description                                                             | Example                           |
+| --------------- | ------------ | ----------------------------------------------------------------------- | --------------------------------- |
+| `--epochs`      | `int`        | Number of training epochs                                               | `--epochs 50`                     |
+| `--batch_size`  | `int`        | Batch size                                                              | `--batch_size 64`                 |
+| `--lr`          | `float`      | Learning rate                                                           | `--lr 0.0003`                     |
+| `--precision`   | `str`        | Precision: `32`, `16-mixed`                                             | `--precision 16-mixed`            |
+| `--num_workers` | `int \| str` | Number of DataLoader workers (on Windows with CUDA, `0` is recommended) | `--num_workers 0`                 |
+| `--synthetic`   | `bool`       | Use synthetic data (default `false`)                                    | `--synthetic` or `--no-synthetic` |
+| `--mlflow`      | `bool`       | Enable/disable MLflow logging                                           | `--mlflow` or `--no-mlflow`       |
+| `*overrides`    | `str`        | Additional Hydra overrides (positional arguments)                       | `train.save_checkpoints=true`     |
+
+**Parameter combination examples:**
+
+```powershell
+# Minimal command with synthetic data
+python -m uv run cassava-fire train --epochs 1 --synthetic
+
+# With additional Hydra overrides
+python -m uv run cassava-fire train `
+  --epochs 10 `
+  --batch_size 32 `
+  train.save_checkpoints=true `
+  model=efficientnet_b0 `
+  augment=strong
+
+# With GPU (via venv)
+.\.venv\Scripts\python.exe -m cassava_leaf_disease.fire_cli train `
+  --epochs 50 `
+  --precision 16-mixed `
+  train.accelerator=gpu `
+  train.devices=1 `
+  train.save_checkpoints=true
+```
+
+#### Hydra CLI (full control over configuration)
+
+For full control over all parameters, use Hydra CLI directly. All paths are relative to the project root.
+
+**Quick smoke test:**
+
+```powershell
+python -m uv run python -m cassava_leaf_disease train `
+  data.synthetic.enabled=true `
+  train.epochs=1 `
+  train.batch_size=32 `
+  train.num_workers=0 `
+  logger.enabled=false
+```
+
+**Training on real data (short run with checkpoint saving):**
 
 ```powershell
 python -m uv run python -m cassava_leaf_disease train `
@@ -211,9 +317,7 @@ python -m uv run python -m cassava_leaf_disease train `
   logger.enabled=true
 ```
 
-**Important:** The `train.save_checkpoints=true` parameter is required to save the model checkpoint, which will then be automatically discovered when running inference.
-
-#### Full training on real data
+**Full training on real data:**
 
 ```powershell
 python -m uv run python -m cassava_leaf_disease train `
@@ -226,9 +330,7 @@ python -m uv run python -m cassava_leaf_disease train `
   logger.enabled=true
 ```
 
-#### Training on GPU (Windows, via venv)
-
-After installing CUDA PyTorch (see Setup):
+**Training on GPU (via venv):**
 
 ```powershell
 .\.venv\Scripts\python.exe -m cassava_leaf_disease train `
@@ -243,31 +345,27 @@ After installing CUDA PyTorch (see Setup):
   logger.enabled=true
 ```
 
-**Important:** `uv run` syncs the environment by default and may revert CUDA torch back to CPU-only torch from `uv.lock`. If you want to use `uv run`, add `--no-sync`:
+**Important:**
 
-```powershell
-python -m uv run --no-sync cassava train train.accelerator=gpu train.devices=1 train.num_workers=0 train.precision=16-mixed
-```
+- The `train.save_checkpoints=true` parameter is required to save the model checkpoint, which will then be automatically discovered when running inference.
+- `uv run` syncs the environment by default and may revert CUDA torch back to CPU-only torch from `uv.lock`. For GPU, use venv directly or `uv run --no-sync`.
 
-#### KFold mode (stratified cross-validation)
-
-To run training with K-Fold validation:
-
-```powershell
-python -m uv run python -m cassava_leaf_disease train data.split.strategy=kfold data.split.folds=5 data.split.fold_index=0
-```
-
-#### Training parameters
-
-Main parameters that can be overridden via Hydra:
+**Main Hydra parameters for training:**
 
 - `train.epochs` — number of epochs
 - `train.batch_size` — batch size
 - `train.lr` — learning rate
 - `train.accelerator` — `cpu` or `gpu`
+- `train.devices` — number of devices (for GPU: `1`)
 - `train.precision` — `32`, `16-mixed` (for GPU)
 - `train.num_workers` — number of DataLoader workers (on Windows with CUDA, `0` is recommended)
 - `train.save_checkpoints` — whether to save model checkpoints (default `false`, set to `true` for subsequent inference)
+- `data.synthetic.enabled` — use synthetic data (`true`/`false`)
+- `data.limits.max_train_samples` — limit number of training examples
+- `data.limits.max_val_samples` — limit number of validation examples
+- `data.split.strategy` — split strategy: `holdout`, `kfold`
+- `data.split.folds` — number of folds for KFold
+- `data.split.fold_index` — current fold index (0..folds-1)
 - `model` — model choice (`resnet18`, `efficientnet_b0`)
 - `augment` — augmentation choice (`basic`, `strong`)
 - `logger.enabled` — enable/disable MLflow logging
@@ -276,57 +374,172 @@ Full list of parameters is available in the `configs/` directory.
 
 ### Inference
 
-#### CLI inference
+To run prediction on a single image, two methods are available: through **Fire CLI** (convenient syntax) or through **Hydra CLI** (full control). All paths are relative to the project root.
 
-To run prediction on a single image via CLI:
+#### Fire CLI (recommended for daily work)
 
 **Simplest way (automatic discovery of the latest trained model):**
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
-  infer.image_path="data/cassava/test_image/2216849948.jpg" `
-  infer.device=auto
+python -m uv run cassava-fire infer --image data/cassava/test_image/2216849948.jpg
 ```
 
 Inference will automatically find the latest trained model in `outputs/` (by modification time).
 
-**Alternative options:**
-
-**Option A: Use DVC-tracked checkpoint (recommended for production):**
+**With explicit checkpoint path (relative path):**
 
 ```powershell
-# First, download model from S3 and add to DVC tracking
-.\.venv\Scripts\python.exe -m cassava_leaf_disease download-model
-
-# Then run inference
-.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
-  infer.checkpoint_path="artifacts/best.ckpt" `
-  infer.image_path="data/cassava/test_image/2216849948.jpg" `
-  infer.device=auto
+python -m uv run cassava-fire infer `
+  --image data/cassava/test_image/2216849948.jpg `
+  --ckpt artifacts/best.ckpt
 ```
 
-**Option B: Direct download from S3 (no local cache, slower):**
+**With S3 download:**
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
-  infer.checkpoint_path=null `
-  infer.checkpoint_s3_uri="s3://mlops-cassava-project/cassava/models/.../best.ckpt" `
-  infer.image_path="data/cassava/test_image/2216849948.jpg" `
-  infer.device=auto
+python -m uv run cassava-fire infer `
+  --image data/cassava/test_image/2216849948.jpg `
+  --ckpt_s3 s3://mlops-cassava-project/cassava/models/.../best.ckpt
 ```
+
+**With additional parameters:**
+
+```powershell
+python -m uv run cassava-fire infer `
+  --image data/cassava/test_image/2216849948.jpg `
+  --device cuda `
+  --top_k 3
+```
+
+**Fire CLI parameters for `infer` command:**
+
+| Parameter    | Type  | Description                                                                                         | Example                                          |
+| ------------ | ----- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `--image`    | `str` | Path to image (relative to project root)                                                            | `--image data/cassava/test_image/2216849948.jpg` |
+| `--ckpt`     | `str` | Path to checkpoint (relative or absolute). If not specified, automatic search in `outputs/` is used | `--ckpt artifacts/best.ckpt`                     |
+| `--ckpt_s3`  | `str` | S3 URI for direct checkpoint download (downloaded to temporary file)                                | `--ckpt_s3 s3://bucket/key/best.ckpt`            |
+| `--device`   | `str` | Device for inference: `auto`, `cpu`, `cuda`                                                         | `--device auto`                                  |
+| `--top_k`    | `int` | Number of top classes to output (default 5)                                                         | `--top_k 3`                                      |
+| `*overrides` | `str` | Additional Hydra overrides (positional arguments)                                                   | `infer.checkpoint_path=null`                     |
 
 **Checkpoint discovery priority:**
 
-1. **Explicit path** (`infer.checkpoint_path`) — if specified and exists
+1. **Explicit path** (`--ckpt`) — if specified and exists
 2. **Auto-discovery** — latest `best.ckpt` in `outputs/` (by modification time)
-3. **S3 URI** (`infer.checkpoint_s3_uri`) — if specified, downloaded to a temporary file
+3. **S3 URI** (`--ckpt_s3`) — if specified, downloaded to a temporary file
+
+#### Hydra CLI (full control over configuration)
+
+**Automatic discovery of latest model:**
+
+```powershell
+python -m uv run python -m cassava_leaf_disease infer `
+  infer.image_path=data/cassava/test_image/2216849948.jpg `
+  infer.device=auto
+```
+
+**With explicit checkpoint path (relative path):**
+
+```powershell
+python -m uv run python -m cassava_leaf_disease infer `
+  infer.checkpoint_path=artifacts/best.ckpt `
+  infer.image_path=data/cassava/test_image/2216849948.jpg `
+  infer.device=auto
+```
+
+**With S3 download:**
+
+```powershell
+python -m uv run python -m cassava_leaf_disease infer `
+  infer.checkpoint_path=null `
+  infer.checkpoint_s3_uri=s3://mlops-cassava-project/cassava/models/.../best.ckpt `
+  infer.image_path=data/cassava/test_image/2216849948.jpg `
+  infer.device=auto
+```
+
+**Hydra parameters for inference:**
+
+- `infer.image_path` — path to image (relative to project root)
+- `infer.checkpoint_path` — path to checkpoint (relative or absolute). If `null`, automatic search in `outputs/` is used
+- `infer.checkpoint_s3_uri` — S3 URI for direct checkpoint download (downloaded to temporary file)
+- `infer.device` — device for inference: `auto`, `cpu`, `cuda`
+- `infer.top_k` — number of top classes to output (default 5)
 
 **Notes:**
 
 - By default `infer.checkpoint_path=null` — uses automatic discovery of the latest model from `outputs/`
 - `infer()` automatically calls `dvc pull` for `checkpoint_path` if the model is in DVC tracking
 - If `checkpoint_path` is not found, auto-discovery is used, then `checkpoint_s3_uri` (if specified)
-- **Recommended:** for production, use DVC-tracked checkpoint (option A) — faster and more reliable
+- **Recommended:** for production, use DVC-tracked checkpoint — faster and more reliable
+
+**Example: Download model from S3 and use for inference:**
+
+```powershell
+# Step 1: Download model from S3 and add to DVC tracking
+python -m uv run cassava-fire download_model
+
+# Step 2: Run inference (will automatically find model in artifacts/)
+python -m uv run cassava-fire infer --image data/cassava/test_image/2216849948.jpg
+```
+
+### Other Fire CLI Commands
+
+#### download_data — download dataset
+
+Downloads and extracts dataset from a public link.
+
+```powershell
+# Download data
+python -m uv run cassava-fire download_data
+
+# Force re-download (even if already exists)
+python -m uv run cassava-fire download_data --force
+```
+
+**Parameters:**
+
+| Parameter    | Type   | Description                                   | Example                 |
+| ------------ | ------ | --------------------------------------------- | ----------------------- |
+| `--force`    | `bool` | Force re-download even if data already exists | `--force`               |
+| `*overrides` | `str`  | Additional Hydra overrides                    | `download_data.url=...` |
+
+#### download_model — download model from S3
+
+Downloads checkpoint from S3 and adds to DVC tracking.
+
+```powershell
+# Download model (uses URI from configs/download_model.yaml)
+python -m uv run cassava-fire download_model
+
+# With S3 URI specified
+python -m uv run cassava-fire download_model `
+  --s3_uri s3://mlops-cassava-project/cassava/models/.../best.ckpt
+
+# With automatic push to DVC remote
+python -m uv run cassava-fire download_model --push
+```
+
+**Parameters:**
+
+| Parameter     | Type   | Description                                      | Example                              |
+| ------------- | ------ | ------------------------------------------------ | ------------------------------------ |
+| `--s3_uri`    | `str`  | S3 URI of checkpoint to download                 | `--s3_uri s3://bucket/key/best.ckpt` |
+| `--dst_dir`   | `str`  | Local directory to save to (default `artifacts`) | `--dst_dir artifacts`                |
+| `--overwrite` | `bool` | Overwrite existing file                          | `--overwrite`                        |
+| `--push`      | `bool` | Push to DVC remote after adding                  | `--push`                             |
+| `*overrides`  | `str`  | Additional Hydra overrides                       | `download_model.remote=yandex_s3`    |
+
+#### raw — direct Hydra command call
+
+For direct calls to any Hydra commands without Fire wrapper.
+
+```powershell
+# Direct Hydra command call
+python -m uv run cassava-fire raw train train.epochs=1 logger.enabled=false
+
+# With any parameters
+python -m uv run cassava-fire raw infer infer.image_path=data/cassava/test_image/2216849948.jpg
+```
 
 #### FastAPI server
 
