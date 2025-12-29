@@ -31,7 +31,10 @@ def _resolve_device(device_cfg: str) -> torch.device:
 
 def _load_model(cfg: Any, ckpt_path: Path, device: torch.device) -> CassavaClassifier:
     model = CassavaClassifier(cfg)
-    ckpt = torch.load(str(ckpt_path), map_location="cpu")
+    # NOTE: We explicitly set weights_only=False for compatibility with recent PyTorch
+    # defaults (weights_only=True) and because our Lightning checkpoints can contain
+    # metadata objects (e.g. OmegaConf DictConfig). Only load checkpoints you trust.
+    ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
 
     # Support both Lightning full checkpoints and "weights-only" checkpoints.
     state_dict = ckpt.get("state_dict", ckpt if isinstance(ckpt, dict) else None)

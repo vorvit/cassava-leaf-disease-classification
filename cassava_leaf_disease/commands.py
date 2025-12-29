@@ -110,17 +110,7 @@ def _print_infer_help() -> None:
 
 
 def _run_train(overrides: list[str]) -> None:
-    # Lazy imports to keep CLI startup fast.
-    from pathlib import Path
-
-    from hydra import compose, initialize_config_dir
-
-    # commands.py lives in `<repo>/cassava_leaf_disease/commands.py`
-    # so `<repo>/configs` is `parents[1] / "configs"`.
-    config_dir = (Path(__file__).resolve().parents[1] / "configs").resolve()
-
-    with initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
-        cfg = compose(config_name="train", overrides=overrides)
+    cfg = compose_cfg("train", overrides)
 
     from cassava_leaf_disease.training.train import train
 
@@ -182,18 +172,42 @@ def _expand_multirun_overrides(overrides: list[str]) -> list[list[str]]:
 
 
 def _run_infer(overrides: list[str]) -> None:
-    # Lazy imports to keep CLI startup fast.
-    from pathlib import Path
-
-    from hydra import compose, initialize_config_dir
-
-    config_dir = (Path(__file__).resolve().parents[1] / "configs").resolve()
-    with initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
-        cfg = compose(config_name="infer", overrides=overrides)
+    cfg = compose_cfg("infer", overrides)
 
     from cassava_leaf_disease.serving.infer import infer
 
     infer(cfg)
+
+
+def _sanitize_overrides(overrides: list[str]) -> list[str]:
+    """Sanitize Hydra overrides for common CLI pitfalls.
+
+    Hydra override grammar treats unquoted values containing '=' as a syntax error.
+    This happens frequently with checkpoint file names like `epoch=0-step=16.ckpt`.
+    """
+    sanitized: list[str] = []
+    for override in overrides:
+        if "=" not in override:
+            sanitized.append(override)
+            continue
+
+        key, value = override.split("=", 1)
+        value_str = str(value)
+
+        # If value is already quoted, keep it.
+        if len(value_str) >= 2 and ((value_str[0] == value_str[-1]) and value_str[0] in {"'", '"'}):
+            sanitized.append(override)
+            continue
+
+        # Quote values containing '=' to avoid Hydra parse errors.
+        if "=" in value_str:
+            escaped = value_str.replace("\\", "\\\\").replace('"', '\\"')
+            sanitized.append(f'{key}="{escaped}"')
+            continue
+
+        sanitized.append(override)
+
+    return sanitized
 
 
 def compose_cfg(config_name: str, overrides: list[str]) -> object:
@@ -208,7 +222,7 @@ def compose_cfg(config_name: str, overrides: list[str]) -> object:
 
     config_dir = (Path(__file__).resolve().parents[1] / "configs").resolve()
     with initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
-        return compose(config_name=str(config_name), overrides=list(overrides))
+        return compose(config_name=str(config_name), overrides=_sanitize_overrides(list(overrides)))
 
 
 def _ensure_utf8_stdio() -> None:
