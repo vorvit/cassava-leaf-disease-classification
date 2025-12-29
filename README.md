@@ -197,16 +197,33 @@ python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=tru
 
 #### Обучение на реальных данных (короткий прогон на подмножестве)
 
-Для быстрой проверки на реальных данных:
+Для быстрой проверки на реальных данных (с сохранением чекпоинта для последующего инференса):
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=false data.limits.max_train_samples=800 data.limits.max_val_samples=200 train.epochs=1 train.batch_size=32 train.num_workers=0 logger.enabled=true
+python -m uv run python -m cassava_leaf_disease train `
+  data.synthetic.enabled=false `
+  data.limits.max_train_samples=800 `
+  data.limits.max_val_samples=200 `
+  train.epochs=1 `
+  train.batch_size=32 `
+  train.num_workers=0 `
+  train.save_checkpoints=true `
+  logger.enabled=true
 ```
+
+**Важно:** Параметр `train.save_checkpoints=true` необходим для сохранения чекпоинта модели, который затем будет автоматически найден при запуске инференса.
 
 #### Полное обучение на реальных данных
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=false train.epochs=50 train.batch_size=64 train.num_workers=0 train.accelerator=cpu logger.enabled=true
+python -m uv run python -m cassava_leaf_disease train `
+  data.synthetic.enabled=false `
+  train.epochs=50 `
+  train.batch_size=64 `
+  train.num_workers=0 `
+  train.accelerator=cpu `
+  train.save_checkpoints=true `
+  logger.enabled=true
 ```
 
 #### Обучение на GPU (Windows, через venv)
@@ -214,7 +231,16 @@ python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=fal
 После установки CUDA PyTorch (см. Setup):
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease train data.synthetic.enabled=false train.epochs=50 train.batch_size=64 train.num_workers=0 train.accelerator=gpu train.devices=1 train.precision=16-mixed logger.enabled=true
+.\.venv\Scripts\python.exe -m cassava_leaf_disease train `
+  data.synthetic.enabled=false `
+  train.epochs=50 `
+  train.batch_size=64 `
+  train.num_workers=0 `
+  train.accelerator=gpu `
+  train.devices=1 `
+  train.precision=16-mixed `
+  train.save_checkpoints=true `
+  logger.enabled=true
 ```
 
 **Важно:** `uv run` по умолчанию делает sync окружения и может вернуть CPU-torch из `uv.lock`. Если всё-таки хотите запускать через `uv run`, используйте `--no-sync`:
@@ -241,6 +267,7 @@ python -m uv run python -m cassava_leaf_disease train data.split.strategy=kfold 
 - `train.accelerator` — `cpu` или `gpu`
 - `train.precision` — `32`, `16-mixed` (для GPU)
 - `train.num_workers` — количество воркеров для DataLoader (на Windows с CUDA рекомендуется `0`)
+- `train.save_checkpoints` — сохранять ли чекпоинты модели (по умолчанию `false`, установите `true` для последующего инференса)
 - `model` — выбор модели (`resnet18`, `efficientnet_b0`)
 - `augment` — выбор аугментаций (`basic`, `strong`)
 - `logger.enabled` — включить/выключить MLflow логирование

@@ -197,16 +197,33 @@ python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=tru
 
 #### Training on real data (short run on a subset)
 
-For quick verification on real data:
+For quick verification on real data (with checkpoint saving for subsequent inference):
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=false data.limits.max_train_samples=800 data.limits.max_val_samples=200 train.epochs=1 train.batch_size=32 train.num_workers=0 logger.enabled=true
+python -m uv run python -m cassava_leaf_disease train `
+  data.synthetic.enabled=false `
+  data.limits.max_train_samples=800 `
+  data.limits.max_val_samples=200 `
+  train.epochs=1 `
+  train.batch_size=32 `
+  train.num_workers=0 `
+  train.save_checkpoints=true `
+  logger.enabled=true
 ```
+
+**Important:** The `train.save_checkpoints=true` parameter is required to save the model checkpoint, which will then be automatically discovered when running inference.
 
 #### Full training on real data
 
 ```powershell
-python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=false train.epochs=50 train.batch_size=64 train.num_workers=0 train.accelerator=cpu logger.enabled=true
+python -m uv run python -m cassava_leaf_disease train `
+  data.synthetic.enabled=false `
+  train.epochs=50 `
+  train.batch_size=64 `
+  train.num_workers=0 `
+  train.accelerator=cpu `
+  train.save_checkpoints=true `
+  logger.enabled=true
 ```
 
 #### Training on GPU (Windows, via venv)
@@ -214,7 +231,16 @@ python -m uv run python -m cassava_leaf_disease train data.synthetic.enabled=fal
 After installing CUDA PyTorch (see Setup):
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease train data.synthetic.enabled=false train.epochs=50 train.batch_size=64 train.num_workers=0 train.accelerator=gpu train.devices=1 train.precision=16-mixed logger.enabled=true
+.\.venv\Scripts\python.exe -m cassava_leaf_disease train `
+  data.synthetic.enabled=false `
+  train.epochs=50 `
+  train.batch_size=64 `
+  train.num_workers=0 `
+  train.accelerator=gpu `
+  train.devices=1 `
+  train.precision=16-mixed `
+  train.save_checkpoints=true `
+  logger.enabled=true
 ```
 
 **Important:** `uv run` syncs the environment by default and may revert CUDA torch back to CPU-only torch from `uv.lock`. If you want to use `uv run`, add `--no-sync`:
@@ -241,6 +267,7 @@ Main parameters that can be overridden via Hydra:
 - `train.accelerator` — `cpu` or `gpu`
 - `train.precision` — `32`, `16-mixed` (for GPU)
 - `train.num_workers` — number of DataLoader workers (on Windows with CUDA, `0` is recommended)
+- `train.save_checkpoints` — whether to save model checkpoints (default `false`, set to `true` for subsequent inference)
 - `model` — model choice (`resnet18`, `efficientnet_b0`)
 - `augment` — augmentation choice (`basic`, `strong`)
 - `logger.enabled` — enable/disable MLflow logging
