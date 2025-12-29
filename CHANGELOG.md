@@ -40,6 +40,8 @@ All notable changes to this project will be documented in this file.
 
 - add mypy (d9144bb)
 
+- update changelog (a1b5167)
+
 ### Docs
 
 - expand README for task2 workflow (4736d10)
@@ -81,6 +83,8 @@ All notable changes to this project will be documented in this file.
 - add max_time limit, S3 metrics upload, and helper tests (2c964c9)
 
 - add download-model and improve checkpoint handling (39c5e35)
+
+- auto-discover latest trained model for inference (793c566)
 
 ### Fixes
 
