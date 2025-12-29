@@ -6,6 +6,83 @@ from pathlib import Path
 from typing import Any
 
 
+def _strip_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1].strip()
+    return value
+
+
+def _load_dotenv_file(dotenv_path: Path) -> dict[str, str]:
+    """Load key/value pairs from a local .env file (no shell expansion)."""
+    if not dotenv_path.exists():
+        return {}
+
+    result: dict[str, str] = {}
+    text = dotenv_path.read_text(encoding="utf-8", errors="replace")
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        result[key] = _strip_quotes(value)
+    return result
+
+
+def _ensure_s3_env_from_dotenv(repo_root: Path) -> None:
+    """Populate AWS/YC env vars from `.env` if present (without printing secrets)."""
+    import os
+
+    dotenv = _load_dotenv_file(repo_root / ".env")
+    if not dotenv:
+        return
+
+    candidates = {
+        "AWS_ACCESS_KEY_ID": [
+            "AWS_ACCESS_KEY_ID",
+            "YC_ACCESS_KEY_ID",
+            "YOUR_ACCESS_KEY",
+            "YOUR_ACCESS_KEY_ID",
+        ],
+        "AWS_SECRET_ACCESS_KEY": [
+            "AWS_SECRET_ACCESS_KEY",
+            "YC_SECRET_ACCESS_KEY",
+            "YOUR_SECRET_KEY",
+            "YOUR_SECRET_ACCESS_KEY",
+        ],
+    }
+    for canonical_key, aliases in candidates.items():
+        if os.getenv(canonical_key):
+            continue
+        for alias in aliases:
+            value = dotenv.get(alias)
+            if value:
+                os.environ[canonical_key] = value
+                break
+
+
+def _normalize_max_time(value: object) -> str | None:
+    """Normalize Trainer max_time from config values."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.lower() == "null":
+        return None
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        total_minutes = int(value)
+        total_minutes = max(0, total_minutes)
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        return f"{hours:02d}:{minutes:02d}:00"
+    return None
+
+
 def train(cfg: Any) -> None:
     """Run training using Hydra-composed config."""
     import pytorch_lightning as pl
@@ -88,6 +165,9 @@ def train(cfg: Any) -> None:
             )
         )
 
+    repo_root = Path(__file__).resolve().parents[2]
+    max_time = _normalize_max_time(getattr(cfg.train, "max_time", None))
+
     trainer = pl.Trainer(
         max_epochs=int(cfg.train.epochs),
         accelerator=str(cfg.train.accelerator),
@@ -102,6 +182,7 @@ def train(cfg: Any) -> None:
         # We explicitly disable it unless the project config asks for checkpoints,
         # to keep the training run lightweight and avoid writing large artifacts.
         enable_checkpointing=bool(getattr(cfg.train, "save_checkpoints", False)),
+        max_time=max_time,
         deterministic=True,
     )
 
@@ -143,12 +224,17 @@ def train(cfg: Any) -> None:
     # 2) Optional: upload checkpoint to S3 (Yandex Object Storage).
     if bool(getattr(artifacts_cfg, "upload_checkpoint_to_s3", False)):
         try:
+            import json
             import os
+            from datetime import datetime, timezone
 
             import boto3
+            import torch
         except Exception as exc:
             print(f"[s3] upload skipped (missing deps): {exc}")
             return
+
+        _ensure_s3_env_from_dotenv(repo_root=repo_root)
 
         access_key = os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("YC_ACCESS_KEY_ID")
         secret_key = os.getenv("AWS_SECRET_ACCESS_KEY") or os.getenv("YC_SECRET_ACCESS_KEY")
@@ -171,9 +257,53 @@ def train(cfg: Any) -> None:
             region_name=region,
         )
 
-        key = f"{prefix}/{ckpt_path.name}"
+        run_id = None
+        for lg in loggers:
+            if lg.__class__.__name__ == "MLFlowLogger":
+                run_id = getattr(lg, "run_id", None)
+                break
+        run_tag = str(run_id) if run_id else datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+        key_prefix = f"{prefix}/{git_commit_id}/{run_tag}".strip("/")
+        ckpt_key = f"{key_prefix}/{ckpt_path.name}"
         try:
-            s3.upload_file(str(ckpt_path), bucket, key)
-            print(f"[s3] uploaded: s3://{bucket}/{key}")
+            s3.upload_file(str(ckpt_path), bucket, ckpt_key)
+            print(f"[s3] uploaded: s3://{bucket}/{ckpt_key}")
         except Exception as exc:
             print(f"[s3] upload failed (continuing): {exc}")
+            return
+
+        if not bool(getattr(artifacts_cfg, "upload_metrics_to_s3", False)):
+            return
+
+        def _as_float(v: object) -> float | None:
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, torch.Tensor) and v.numel() == 1:
+                return float(v.detach().cpu().item())
+            return None
+
+        callback_metrics = getattr(trainer, "callback_metrics", {}) or {}
+        metrics: dict[str, float] = {}
+        for k, v in dict(callback_metrics).items():
+            value = _as_float(v)
+            if value is not None:
+                metrics[str(k)] = float(value)
+
+        payload = {
+            "git_commit_id": git_commit_id,
+            "run_tag": run_tag,
+            "checkpoint_s3_uri": f"s3://{bucket}/{ckpt_key}",
+            "metrics": metrics,
+        }
+        metrics_key = f"{key_prefix}/metrics.json"
+        try:
+            s3.put_object(
+                Bucket=bucket,
+                Key=metrics_key,
+                Body=json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+                ContentType="application/json",
+            )
+            print(f"[s3] metrics uploaded: s3://{bucket}/{metrics_key}")
+        except Exception as exc:
+            print(f"[s3] metrics upload failed (continuing): {exc}")

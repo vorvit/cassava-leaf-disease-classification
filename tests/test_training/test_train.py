@@ -1222,3 +1222,357 @@ def test_train_s3_upload_missing_deps(monkeypatch: pytest.MonkeyPatch, tmp_path)
         }
     )
     train_mod.train(cfg)
+
+
+def test_train_max_time_passed_to_trainer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.training import train as train_mod
+
+    captured_kwargs = {}
+
+    class DummyTrainer:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            self.callbacks = []
+
+        def fit(self, model=None, datamodule=None):
+            return None
+
+    monkeypatch.setattr("pytorch_lightning.Trainer", DummyTrainer, raising=False)
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.dvc_pull",
+        lambda *a, **k: SimpleNamespace(success=True, message="ok"),
+    )
+
+    class DummyDataModule:
+        def __init__(self, _cfg):
+            pass
+
+        def setup(self, _stage=None):
+            pass
+
+        def train_class_weights(self):
+            return None
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self, _cfg, **_k):
+            super().__init__()
+            self._p = torch.nn.Parameter(torch.zeros(()))
+
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.datamodule.CassavaDataModule",
+        DummyDataModule,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.lightning_module.CassavaClassifier",
+        DummyModel,
+        raising=False,
+    )
+
+    cfg = OmegaConf.create(
+        {
+            "train": {
+                "seed": 1,
+                "epochs": 10,
+                "max_time": "00:25:00",
+                "accelerator": "cpu",
+                "devices": 1,
+                "precision": "32-true",
+                "log_every_n_steps": 1,
+                "fast_dev_run": False,
+                "save_checkpoints": False,
+                "artifacts": None,
+            },
+            "paths": {"data_dir": "data/cassava", "outputs_dir": "outputs"},
+            "logger": {"enabled": False},
+            "model": {"backbone": "resnet18", "pretrained": False, "dropout": 0.0},
+            "augment": {"image_size": 8, "mean": [0.5, 0.5, 0.5], "std": [0.2, 0.2, 0.2]},
+            "data": {
+                "dataset": {"num_classes": 5, "class_names": ["a", "b", "c", "d", "e"]},
+                "paths": {"train_csv": "missing.csv", "images_dir": "missing_dir"},
+                "split": {
+                    "strategy": "holdout",
+                    "val_size": 0.2,
+                    "seed": 42,
+                    "folds": 5,
+                    "fold_index": 0,
+                },
+                "synthetic": {
+                    "enabled": True,
+                    "fallback_if_missing": True,
+                    "seed": 1,
+                    "train_size": 4,
+                    "val_size": 2,
+                },
+            },
+        }
+    )
+    train_mod.train(cfg)
+    assert captured_kwargs.get("max_time") == "00:25:00"
+
+
+def test_train_upload_metrics_to_s3(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from cassava_leaf_disease.training import train as train_mod
+
+    ckpt = tmp_path / "best.ckpt"
+    ckpt.write_text("x", encoding="utf-8")
+
+    class ModelCheckpoint:
+        def __init__(self, **_k):
+            self.best_model_path = str(ckpt)
+
+    class DummyTrainer:
+        def __init__(self, **kwargs):
+            self.callbacks = kwargs.get("callbacks", [])
+            self.callback_metrics = {"val/loss": 0.5, "val/acc": 0.8}
+
+        def fit(self, model=None, datamodule=None):
+            return None
+
+    class MockS3Client:
+        def __init__(self):
+            self.uploaded_files = {}
+            self.put_objects = {}
+
+        def upload_file(self, local_path, bucket, key):
+            self.uploaded_files[key] = local_path
+
+        def put_object(self, **kwargs):
+            key = kwargs.get("Key") or kwargs.get("key")
+            body = kwargs.get("Body") or kwargs.get("body")
+            self.put_objects[key] = {
+                "body": body,
+                "content_type": kwargs.get("ContentType") or kwargs.get("content_type"),
+            }
+
+    monkeypatch.setattr("pytorch_lightning.Trainer", DummyTrainer, raising=False)
+    monkeypatch.setattr(
+        "pytorch_lightning.callbacks.ModelCheckpoint", ModelCheckpoint, raising=False
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.dvc_pull",
+        lambda *a, **k: SimpleNamespace(success=True, message="ok"),
+    )
+    monkeypatch.setattr("cassava_leaf_disease.utils.git.get_git_commit_id", lambda: "c0")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test_secret")
+
+    mock_s3 = MockS3Client()
+
+    def fake_boto3_client(*args, **kwargs):
+        return mock_s3
+
+    import boto3
+
+    monkeypatch.setattr(boto3, "client", fake_boto3_client)
+
+    class DummyDataModule:
+        def __init__(self, _cfg):
+            pass
+
+        def setup(self, _stage=None):
+            pass
+
+        def train_class_weights(self):
+            return None
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self, _cfg, **_k):
+            super().__init__()
+            self._p = torch.nn.Parameter(torch.zeros(()))
+
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.datamodule.CassavaDataModule",
+        DummyDataModule,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.lightning_module.CassavaClassifier",
+        DummyModel,
+        raising=False,
+    )
+
+    cfg = OmegaConf.create(
+        {
+            "train": {
+                "seed": 1,
+                "epochs": 1,
+                "accelerator": "cpu",
+                "devices": 1,
+                "precision": "32-true",
+                "log_every_n_steps": 1,
+                "fast_dev_run": True,
+                "save_checkpoints": True,
+                "artifacts": {
+                    "log_checkpoint_to_mlflow": False,
+                    "upload_checkpoint_to_s3": True,
+                    "upload_metrics_to_s3": True,
+                    "s3_bucket": "test",
+                    "s3_prefix": "models",
+                },
+            },
+            "paths": {"data_dir": str(tmp_path), "outputs_dir": str(tmp_path)},
+            "logger": {"enabled": False},
+            "model": {"backbone": "resnet18", "pretrained": False, "dropout": 0.0},
+            "augment": {"image_size": 8, "mean": [0.5, 0.5, 0.5], "std": [0.2, 0.2, 0.2]},
+            "data": {
+                "dataset": {"num_classes": 5, "class_names": ["a", "b", "c", "d", "e"]},
+                "paths": {"train_csv": "missing.csv", "images_dir": "missing"},
+                "split": {
+                    "strategy": "holdout",
+                    "val_size": 0.2,
+                    "seed": 1,
+                    "folds": 5,
+                    "fold_index": 0,
+                },
+                "synthetic": {
+                    "enabled": True,
+                    "fallback_if_missing": True,
+                    "seed": 1,
+                    "train_size": 2,
+                    "val_size": 1,
+                },
+            },
+        }
+    )
+    train_mod.train(cfg)
+    assert len(mock_s3.uploaded_files) > 0
+    assert len(mock_s3.put_objects) > 0
+    metrics_key = next((k for k in mock_s3.put_objects if "metrics.json" in k), None)
+    assert metrics_key is not None
+    import json
+
+    metrics_body = json.loads(mock_s3.put_objects[metrics_key]["body"].decode("utf-8"))
+    assert "metrics" in metrics_body
+    assert "val/loss" in metrics_body["metrics"]
+    assert "val/acc" in metrics_body["metrics"]
+
+
+def test_train_upload_metrics_to_s3_no_mlflow_run_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from cassava_leaf_disease.training import train as train_mod
+
+    ckpt = tmp_path / "best.ckpt"
+    ckpt.write_text("x", encoding="utf-8")
+
+    class ModelCheckpoint:
+        def __init__(self, **_k):
+            self.best_model_path = str(ckpt)
+
+    class DummyTrainer:
+        def __init__(self, **kwargs):
+            self.callbacks = kwargs.get("callbacks", [])
+            self.callback_metrics = {"val/loss": 0.5}
+
+        def fit(self, model=None, datamodule=None):
+            return None
+
+    class MockS3Client:
+        def __init__(self):
+            self.uploaded_files = {}
+            self.put_objects = {}
+
+        def upload_file(self, local_path, bucket, key):
+            self.uploaded_files[key] = local_path
+
+        def put_object(self, **kwargs):
+            key = kwargs.get("Key") or kwargs.get("key")
+            body = kwargs.get("Body") or kwargs.get("body")
+            self.put_objects[key] = {
+                "body": body,
+                "content_type": kwargs.get("ContentType") or kwargs.get("content_type"),
+            }
+
+    monkeypatch.setattr("pytorch_lightning.Trainer", DummyTrainer, raising=False)
+    monkeypatch.setattr(
+        "pytorch_lightning.callbacks.ModelCheckpoint", ModelCheckpoint, raising=False
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.dvc_pull",
+        lambda *a, **k: SimpleNamespace(success=True, message="ok"),
+    )
+    monkeypatch.setattr("cassava_leaf_disease.utils.git.get_git_commit_id", lambda: "c0")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test_secret")
+
+    mock_s3 = MockS3Client()
+
+    def fake_boto3_client(*args, **kwargs):
+        return mock_s3
+
+    import boto3
+
+    monkeypatch.setattr(boto3, "client", fake_boto3_client)
+
+    class DummyDataModule:
+        def __init__(self, _cfg):
+            pass
+
+        def setup(self, _stage=None):
+            pass
+
+        def train_class_weights(self):
+            return None
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self, _cfg, **_k):
+            super().__init__()
+            self._p = torch.nn.Parameter(torch.zeros(()))
+
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.datamodule.CassavaDataModule",
+        DummyDataModule,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.lightning_module.CassavaClassifier",
+        DummyModel,
+        raising=False,
+    )
+
+    cfg = OmegaConf.create(
+        {
+            "train": {
+                "seed": 1,
+                "epochs": 1,
+                "accelerator": "cpu",
+                "devices": 1,
+                "precision": "32-true",
+                "log_every_n_steps": 1,
+                "fast_dev_run": True,
+                "save_checkpoints": True,
+                "artifacts": {
+                    "log_checkpoint_to_mlflow": False,
+                    "upload_checkpoint_to_s3": True,
+                    "upload_metrics_to_s3": True,
+                    "s3_bucket": "test",
+                    "s3_prefix": "models",
+                },
+            },
+            "paths": {"data_dir": str(tmp_path), "outputs_dir": str(tmp_path)},
+            "logger": {"enabled": False},
+            "model": {"backbone": "resnet18", "pretrained": False, "dropout": 0.0},
+            "augment": {"image_size": 8, "mean": [0.5, 0.5, 0.5], "std": [0.2, 0.2, 0.2]},
+            "data": {
+                "dataset": {"num_classes": 5, "class_names": ["a", "b", "c", "d", "e"]},
+                "paths": {"train_csv": "missing.csv", "images_dir": "missing"},
+                "split": {
+                    "strategy": "holdout",
+                    "val_size": 0.2,
+                    "seed": 1,
+                    "folds": 5,
+                    "fold_index": 0,
+                },
+                "synthetic": {
+                    "enabled": True,
+                    "fallback_if_missing": True,
+                    "seed": 1,
+                    "train_size": 2,
+                    "val_size": 1,
+                },
+            },
+        }
+    )
+    train_mod.train(cfg)
+    assert len(mock_s3.uploaded_files) > 0

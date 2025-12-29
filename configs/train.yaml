@@ -16,6 +16,8 @@ train:
   num_workers: auto
   lr: 0.0003
   weight_decay: 0.0001
+  # Optional wall-clock limit for Lightning Trainer, e.g. "00:25:00" or minutes (int).
+  max_time: null
   imbalance:
     # none|sampler|loss_weights|both
     strategy: none
@@ -44,6 +46,8 @@ train:
     log_checkpoint_to_mlflow: true
     # Optional: upload checkpoint to Yandex S3 (requires creds, disabled by default).
     upload_checkpoint_to_s3: false
+    # Optional: upload a small JSON with callback metrics to S3 (disabled by default).
+    upload_metrics_to_s3: false
     s3_bucket: mlops-cassava-project
     s3_prefix: cassava/models
     s3_endpoint_url: https://storage.yandexcloud.net
