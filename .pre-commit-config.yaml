@@ -21,3 +21,8 @@ repos:
     hooks:
       - id: prettier
         files: "\\.(md|yml|yaml|json)$"
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy

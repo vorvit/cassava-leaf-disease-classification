@@ -12,7 +12,7 @@ import pandas as pd
 import pytorch_lightning as pl
 import torch
 from sklearn.model_selection import StratifiedKFold, train_test_split
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from cassava_leaf_disease.training.dataset import (
     CassavaCsvDataset,
@@ -35,8 +35,20 @@ class CassavaDataModule(pl.LightningDataModule):
         self.data_cfg = cfg.data
         self.augment_cfg = cfg.augment
 
-        self._train_dataset = None
-        self._val_dataset = None
+        self._train_dataset: Dataset[Any] | None = None
+        self._val_dataset: Dataset[Any] | None = None
+
+    @staticmethod
+    def _parse_optional_int(value: object) -> int | None:
+        """Parse optional int from Hydra/OmegaConf values."""
+        if value is None:
+            return None
+        if isinstance(value, str) and value.lower() == "null":
+            return None
+        try:
+            return int(value)  # type: ignore[call-overload]
+        except Exception:
+            return None
 
     def _resolve_num_workers(self) -> int:
         raw = getattr(self.cfg.train, "num_workers", 0)
@@ -139,12 +151,14 @@ class CassavaDataModule(pl.LightningDataModule):
 
         limits_cfg = getattr(self.data_cfg, "limits", None)
         if limits_cfg:
-            max_train = getattr(limits_cfg, "max_train_samples", None)
-            max_val = getattr(limits_cfg, "max_val_samples", None)
-            if max_train not in (None, "null"):
-                train_samples = train_samples[: int(max_train)]
-            if max_val not in (None, "null"):
-                val_samples = val_samples[: int(max_val)]
+            max_train_raw = getattr(limits_cfg, "max_train_samples", None)
+            max_val_raw = getattr(limits_cfg, "max_val_samples", None)
+            max_train = self._parse_optional_int(max_train_raw)
+            max_val = self._parse_optional_int(max_val_raw)
+            if max_train is not None:
+                train_samples = train_samples[:max_train]
+            if max_val is not None:
+                val_samples = val_samples[:max_val]
 
         self._train_dataset = CassavaCsvDataset(
             train_samples, images_dir=images_dir, transform=train_transform

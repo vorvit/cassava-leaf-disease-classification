@@ -9,7 +9,8 @@ from typing import Any
 def train(cfg: Any) -> None:
     """Run training using Hydra-composed config."""
     import pytorch_lightning as pl
-    from pytorch_lightning.loggers import CSVLogger
+    from pytorch_lightning.callbacks import Callback
+    from pytorch_lightning.loggers import CSVLogger, Logger
 
     from cassava_leaf_disease.data import dvc_pull
     from cassava_leaf_disease.training.datamodule import CassavaDataModule
@@ -30,7 +31,7 @@ def train(cfg: Any) -> None:
     outputs_dir = Path(str(cfg.paths.outputs_dir))
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
-    loggers: list[object] = [CSVLogger(save_dir=str(outputs_dir), name="runs")]
+    loggers: list[Logger] = [CSVLogger(save_dir=str(outputs_dir), name="runs")]
 
     git_commit_id = get_git_commit_id()
     hparams = {
@@ -63,7 +64,7 @@ def train(cfg: Any) -> None:
         except Exception as exc:
             print(f"[mlflow] logger disabled (continuing): {exc}")
 
-    callbacks: list[object] = []
+    callbacks: list[Callback] = []
     if bool(getattr(cfg.train, "save_checkpoints", False)):
         from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -81,7 +82,7 @@ def train(cfg: Any) -> None:
         max_epochs=int(cfg.train.epochs),
         accelerator=str(cfg.train.accelerator),
         devices=cfg.train.devices,
-        precision=str(cfg.train.precision),
+        precision=cfg.train.precision,
         log_every_n_steps=int(cfg.train.log_every_n_steps),
         fast_dev_run=bool(cfg.train.fast_dev_run),
         default_root_dir=str(outputs_dir),
