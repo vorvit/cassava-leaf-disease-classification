@@ -1,0 +1,7 @@
+[core]
+    remote = local
+['remote "local"']
+    url = ../dvc_storage
+['remote "yandex_s3"']
+    url = s3://your-bucket/cassava-leaf-disease
+    endpointurl = https://storage.yandexcloud.net
