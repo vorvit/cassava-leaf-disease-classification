@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+from contextlib import suppress
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -14,6 +15,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     Real commands (train/infer/download-data) will be implemented in later steps.
     """
+    _ensure_utf8_stdio()
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help", "help"}:
         _print_help()
@@ -69,3 +71,16 @@ def _run_train(overrides: list[str]) -> None:
     from cassava_leaf_disease.training.train import train
 
     train(cfg)
+
+
+def _ensure_utf8_stdio() -> None:
+    """Ensure UTF-8 stdout/stderr on Windows consoles.
+
+    Some third-party libs (e.g., MLflow) print unicode symbols to stdout.
+    On certain Windows locales default encoding may be cp1251/cp866, causing crashes.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            with suppress(Exception):
+                reconfigure(encoding="utf-8")
