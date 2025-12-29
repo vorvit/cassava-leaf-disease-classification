@@ -253,24 +253,25 @@ Full list of parameters is available in the `configs/` directory.
 
 To run prediction on a single image via CLI:
 
-**Step 1: Download model from S3 and add to DVC tracking**
+**Simplest way (automatic discovery of the latest trained model):**
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease download-model
+.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
+  infer.image_path="data/cassava/test_image/2216849948.jpg" `
+  infer.device=auto
 ```
 
-This command:
+Inference will automatically find the latest trained model in `outputs/` (by modification time).
 
-- Downloads `best.ckpt` from S3 (URI from `configs/download_model.yaml`)
-- Saves to `artifacts/best.ckpt` (ignored by Git)
-- Adds to DVC tracking (creates `artifacts/best.ckpt.dvc`)
-- Optionally pushes to DVC remote (if `download_model.push=true`)
+**Alternative options:**
 
-**Step 2: Run inference**
-
-**Option A: Use DVC-tracked checkpoint (recommended, faster):**
+**Option A: Use DVC-tracked checkpoint (recommended for production):**
 
 ```powershell
+# First, download model from S3 and add to DVC tracking
+.\.venv\Scripts\python.exe -m cassava_leaf_disease download-model
+
+# Then run inference
 .\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
   infer.checkpoint_path="artifacts/best.ckpt" `
   infer.image_path="data/cassava/test_image/2216849948.jpg" `
@@ -287,11 +288,18 @@ This command:
   infer.device=auto
 ```
 
+**Checkpoint discovery priority:**
+
+1. **Explicit path** (`infer.checkpoint_path`) — if specified and exists
+2. **Auto-discovery** — latest `best.ckpt` in `outputs/` (by modification time)
+3. **S3 URI** (`infer.checkpoint_s3_uri`) — if specified, downloaded to a temporary file
+
 **Notes:**
 
-- `infer()` automatically calls `dvc pull` for `checkpoint_path` if the model is in DVC tracking.
-- If `checkpoint_path` is not found, falls back to `checkpoint_s3_uri` (downloads to a temporary file, then deletes it).
-- **Recommended:** Use DVC for caching (option A) — faster and doesn't require downloading every time.
+- By default `infer.checkpoint_path=null` — uses automatic discovery of the latest model from `outputs/`
+- `infer()` automatically calls `dvc pull` for `checkpoint_path` if the model is in DVC tracking
+- If `checkpoint_path` is not found, auto-discovery is used, then `checkpoint_s3_uri` (if specified)
+- **Recommended:** for production, use DVC-tracked checkpoint (option A) — faster and more reliable
 
 #### FastAPI server
 

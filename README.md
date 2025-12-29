@@ -253,24 +253,25 @@ python -m uv run python -m cassava_leaf_disease train data.split.strategy=kfold 
 
 Для запуска предсказания на одном изображении через CLI:
 
-**Шаг 1: Скачать модель из S3 и добавить в DVC tracking**
+**Самый простой способ (автоматический поиск последней обученной модели):**
 
 ```powershell
-.\.venv\Scripts\python.exe -m cassava_leaf_disease download-model
+.\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
+  infer.image_path="data/cassava/test_image/2216849948.jpg" `
+  infer.device=auto
 ```
 
-Эта команда:
+Инференс автоматически найдёт последнюю обученную модель в `outputs/` (по времени модификации).
 
-- Скачает `best.ckpt` из S3 (URI из `configs/download_model.yaml`)
-- Сохранит в `artifacts/best.ckpt` (игнорируется Git)
-- Добавит в DVC tracking (создаст `artifacts/best.ckpt.dvc`)
-- Опционально запушит в DVC remote (если `download_model.push=true`)
+**Альтернативные варианты:**
 
-**Шаг 2: Запустить инференс**
-
-**Вариант A: Использовать DVC-tracked checkpoint (рекомендуется, быстрее):**
+**Вариант A: Использовать DVC-tracked checkpoint (рекомендуется для продакшена):**
 
 ```powershell
+# Сначала скачать модель из S3 и добавить в DVC tracking
+.\.venv\Scripts\python.exe -m cassava_leaf_disease download-model
+
+# Затем запустить инференс
 .\.venv\Scripts\python.exe -m cassava_leaf_disease infer `
   infer.checkpoint_path="artifacts/best.ckpt" `
   infer.image_path="data/cassava/test_image/2216849948.jpg" `
@@ -287,11 +288,18 @@ python -m uv run python -m cassava_leaf_disease train data.split.strategy=kfold 
   infer.device=auto
 ```
 
+**Приоритет поиска checkpoint:**
+
+1. **Явный путь** (`infer.checkpoint_path`) — если указан и существует
+2. **Автоматический поиск** — последний `best.ckpt` в `outputs/` (по времени модификации)
+3. **S3 URI** (`infer.checkpoint_s3_uri`) — если указан, скачивается во временный файл
+
 **Примечания:**
 
-- `infer()` автоматически вызывает `dvc pull` для `checkpoint_path`, если модель в DVC tracking.
-- Если `checkpoint_path` не найден, используется `checkpoint_s3_uri` (скачивается во временный файл, затем удаляется).
-- **Рекомендуется:** использовать DVC для кеширования (вариант A) — быстрее и не требует скачивания каждый раз.
+- По умолчанию `infer.checkpoint_path=null` — используется автоматический поиск последней модели из `outputs/`
+- `infer()` автоматически вызывает `dvc pull` для `checkpoint_path`, если модель в DVC tracking
+- Если `checkpoint_path` не найден, используется автоматический поиск, затем `checkpoint_s3_uri` (если указан)
+- **Рекомендуется:** для продакшена использовать DVC-tracked checkpoint (вариант A) — быстрее и надёжнее
 
 #### FastAPI сервер
 

@@ -30,6 +30,32 @@ def _resolve_device(device_cfg: str) -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def _find_latest_checkpoint(outputs_dir: Path) -> Path | None:
+    """Find the most recently modified checkpoint in outputs/ directory.
+
+    Searches for 'best.ckpt' files in outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/ pattern.
+    Returns the most recently modified checkpoint, or None if none found.
+    """
+    if not outputs_dir.exists():
+        return None
+
+    checkpoints: list[tuple[float, Path]] = []
+
+    # Search for best.ckpt files in outputs/ subdirectories
+    for ckpt_file in outputs_dir.rglob("best.ckpt"):
+        if ckpt_file.is_file():
+            # Use modification time as key for sorting
+            mtime = ckpt_file.stat().st_mtime
+            checkpoints.append((mtime, ckpt_file))
+
+    if not checkpoints:
+        return None
+
+    # Sort by modification time (most recent first) and return the latest
+    checkpoints.sort(key=lambda x: x[0], reverse=True)
+    return checkpoints[0][1]
+
+
 def _load_model(cfg: Any, ckpt_path: Path, device: torch.device) -> CassavaClassifier:
     model = CassavaClassifier(cfg)
     # NOTE: We explicitly set weights_only=False for compatibility with recent PyTorch
@@ -84,11 +110,15 @@ def infer(cfg: Any) -> dict[str, Any]:
     if not image_path.exists():
         raise SystemExit(f"Image not found: {image_path}")
 
-    # Pull model checkpoint via DVC (same pattern as data).
+    # Resolve checkpoint path with fallback chain:
+    # 1. Explicit checkpoint_path from config (if set)
+    # 2. Latest checkpoint from outputs/ directory (auto-discovery)
+    # 3. S3 URI download (if checkpoint_s3_uri is set)
     ckpt_path_raw = getattr(cfg.infer, "checkpoint_path", None)
     ckpt_path: Path | None = None
     temp_ckpt_path: Path | None = None  # Track temp files for cleanup
 
+    # Step 1: Try explicit checkpoint_path from config
     if ckpt_path_raw not in (None, "null"):
         ckpt_path_str = str(ckpt_path_raw)
         # If checkpoint path is DVC-tracked, pull it via DVC.
@@ -96,8 +126,18 @@ def infer(cfg: Any) -> dict[str, Any]:
         if not ckpt_pull_result.success:
             print(f"[dvc] checkpoint pull failed (continuing): {ckpt_pull_result.message}")
         ckpt_path = Path(ckpt_path_str)
+        if ckpt_path.exists():
+            print(f"[infer] Using checkpoint from config: {ckpt_path}")
 
-    # Fallback: if checkpoint not found locally, try downloading from S3 URI (lazy download).
+    # Step 2: If not found, try auto-discovery of latest checkpoint in outputs/
+    if ckpt_path is None or not ckpt_path.exists():
+        outputs_dir = Path(str(cfg.paths.outputs_dir))
+        latest_ckpt = _find_latest_checkpoint(outputs_dir)
+        if latest_ckpt is not None:
+            ckpt_path = latest_ckpt
+            print(f"[infer] Auto-discovered latest checkpoint: {ckpt_path}")
+
+    # Step 3: Fallback to S3 URI download if still not found
     if ckpt_path is None or not ckpt_path.exists():
         s3_uri = getattr(cfg.infer, "checkpoint_s3_uri", None)
         if s3_uri not in (None, "null"):
@@ -125,8 +165,10 @@ def infer(cfg: Any) -> dict[str, Any]:
             print(f"[infer] Downloaded checkpoint from S3 to temporary file: {ckpt_path}")
         else:
             raise SystemExit(
-                "Checkpoint not found. Set infer.checkpoint_path (DVC-tracked) or "
-                "infer.checkpoint_s3_uri (S3 URI)."
+                "Checkpoint not found. Options:\n"
+                "  1. Set infer.checkpoint_path to a DVC-tracked path (e.g. artifacts/best.ckpt)\n"
+                "  2. Run training first to create a checkpoint in outputs/\n"
+                "  3. Set infer.checkpoint_s3_uri to an S3 URI (e.g. s3://bucket/key/best.ckpt)"
             )
 
     device = _resolve_device(str(cfg.infer.device))

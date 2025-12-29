@@ -38,7 +38,7 @@ def test_serving_infer_outputs_json(tmp_path, monkeypatch: pytest.MonkeyPatch, c
     )
 
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(tmp_path / "outputs")),
         infer=SimpleNamespace(
             image_path=str(img_path), checkpoint_path=str(ckpt), device="cpu", top_k=3
         ),
@@ -47,7 +47,15 @@ def test_serving_infer_outputs_json(tmp_path, monkeypatch: pytest.MonkeyPatch, c
     )
     result = infer_mod.infer(cfg)
     out = capsys.readouterr().out.strip()
-    parsed = json.loads(out)
+    # Extract JSON from output (may have log messages before it)
+    lines = out.split("\n")
+    json_line = None
+    for line in reversed(lines):
+        if line.strip().startswith("{"):
+            json_line = line.strip()
+            break
+    assert json_line is not None, f"No JSON found in output: {out}"
+    parsed = json.loads(json_line)
     assert parsed["predicted_class_id"] == result["predicted_class_id"]
 
 
@@ -56,7 +64,7 @@ def test_serving_infer_error_branches(tmp_path) -> None:
 
     infer_mod = importlib.import_module("cassava_leaf_disease.serving.infer")
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(tmp_path / "outputs")),
         infer=SimpleNamespace(image_path=None, checkpoint_path="x.ckpt", device="cpu", top_k=1),
         data=SimpleNamespace(dataset=SimpleNamespace(class_names=["a"])),
         augment=SimpleNamespace(image_size=8, mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2]),
@@ -70,7 +78,7 @@ def test_serving_infer_image_not_found(tmp_path) -> None:
 
     infer_mod = importlib.import_module("cassava_leaf_disease.serving.infer")
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(tmp_path / "outputs")),
         infer=SimpleNamespace(
             image_path="missing.jpg", checkpoint_path="x.ckpt", device="cpu", top_k=1
         ),
@@ -88,8 +96,12 @@ def test_serving_infer_checkpoint_not_found(tmp_path) -> None:
     img_path = tmp_path / "x.jpg"
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
 
+    # Create empty outputs dir (no checkpoints)
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir()
+
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(outputs_dir)),
         infer=SimpleNamespace(
             image_path=str(img_path),
             checkpoint_path="missing.ckpt",
@@ -111,6 +123,10 @@ def test_serving_infer_downloads_checkpoint(tmp_path, monkeypatch: pytest.Monkey
     infer_mod = importlib.import_module("cassava_leaf_disease.serving.infer")
     img_path = tmp_path / "x.jpg"
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
+
+    # Create empty outputs dir (no checkpoints to auto-discover)
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir()
 
     monkeypatch.setattr(
         infer_mod, "dvc_pull", lambda *a, **k: SimpleNamespace(success=True, message="ok")
@@ -140,7 +156,7 @@ def test_serving_infer_downloads_checkpoint(tmp_path, monkeypatch: pytest.Monkey
     )
 
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(outputs_dir)),
         infer=SimpleNamespace(
             image_path=str(img_path),
             checkpoint_path=None,
@@ -307,6 +323,10 @@ def test_serving_infer_s3_download_failure_branch(
     img_path = tmp_path / "x.jpg"
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
 
+    # Create empty outputs dir (no checkpoints to auto-discover)
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir()
+
     monkeypatch.setattr(
         infer_mod, "dvc_pull", lambda *a, **k: SimpleNamespace(success=True, message="ok")
     )
@@ -317,7 +337,7 @@ def test_serving_infer_s3_download_failure_branch(
     )
 
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(outputs_dir)),
         infer=SimpleNamespace(
             image_path=str(img_path),
             checkpoint_path=None,
@@ -362,6 +382,10 @@ def test_serving_infer_cleanup_temp_file_failure(
     img_path = tmp_path / "x.jpg"
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
 
+    # Create empty outputs dir (no checkpoints to auto-discover)
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir()
+
     monkeypatch.setattr(
         infer_mod, "dvc_pull", lambda *a, **k: SimpleNamespace(success=True, message="ok")
     )
@@ -397,7 +421,7 @@ def test_serving_infer_cleanup_temp_file_failure(
     )
 
     cfg = SimpleNamespace(
-        paths=SimpleNamespace(data_dir=str(tmp_path)),
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(outputs_dir)),
         infer=SimpleNamespace(
             image_path=str(img_path),
             checkpoint_path=None,
@@ -411,3 +435,64 @@ def test_serving_infer_cleanup_temp_file_failure(
     infer_mod.infer(cfg)
     out = capsys.readouterr().out
     assert "failed to cleanup" in out
+
+
+def test_serving_infer_auto_discovers_latest_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """Test that infer automatically discovers the latest checkpoint from outputs/."""
+    import importlib
+
+    infer_mod = importlib.import_module("cassava_leaf_disease.serving.infer")
+    img_path = tmp_path / "x.jpg"
+    Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
+
+    # Create outputs directory structure with multiple checkpoints
+    outputs_dir = tmp_path / "outputs"
+    run1_dir = outputs_dir / "2024-01-01" / "10-00-00" / "checkpoints"
+    run1_dir.mkdir(parents=True)
+    run1_ckpt = run1_dir / "best.ckpt"
+    run1_ckpt.write_bytes(b"old checkpoint")
+
+    run2_dir = outputs_dir / "2024-01-02" / "15-30-00" / "checkpoints"
+    run2_dir.mkdir(parents=True)
+    run2_ckpt = run2_dir / "best.ckpt"
+    run2_ckpt.write_bytes(b"new checkpoint")
+
+    monkeypatch.setattr(
+        infer_mod, "dvc_pull", lambda *a, **k: SimpleNamespace(success=True, message="ok")
+    )
+
+    class DummyModel:
+        def __call__(self, inputs):
+            return torch.zeros((1, 5))
+
+    monkeypatch.setattr(infer_mod, "_load_model", lambda *a, **k: DummyModel())
+    monkeypatch.setattr(
+        infer_mod,
+        "build_transforms",
+        lambda *a, **k: (lambda image: {"image": torch.zeros((3, 8, 8))}),
+    )
+
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(data_dir=str(tmp_path), outputs_dir=str(outputs_dir)),
+        infer=SimpleNamespace(
+            image_path=str(img_path),
+            checkpoint_path=None,  # Auto-discover
+            checkpoint_s3_uri=None,
+            device="cpu",
+            top_k=1,
+        ),
+        data=SimpleNamespace(dataset=SimpleNamespace(class_names=["a", "b", "c", "d", "e"])),
+        augment=SimpleNamespace(image_size=8, mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2]),
+    )
+    result = infer_mod.infer(cfg)
+    assert "predicted_class_id" in result
+    out = capsys.readouterr().out
+    # Should mention auto-discovery
+    assert "Auto-discovered latest checkpoint" in out
+    # Should use the most recent checkpoint (run2) - check normalized path
+    normalized_path = str(run2_ckpt).replace("\\", "/")
+    assert normalized_path in out.replace(
+        "\\", "/"
+    ) or "2024-01-02/15-30-00/checkpoints/best.ckpt" in out.replace("\\", "/")
