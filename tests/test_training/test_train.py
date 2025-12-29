@@ -69,10 +69,16 @@ def test_train_entrypoint_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class DummyDataModule:
         def __init__(self, _cfg):
-            pass
+            self.called_setup = False
+
+        def setup(self, _stage=None):
+            self.called_setup = True
+
+        def train_class_weights(self):
+            return None
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -87,6 +93,94 @@ def test_train_entrypoint_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
         raising=False,
     )
     train_mod.train(cfg)
+
+
+def test_train_imbalance_loss_weights_passed(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from cassava_leaf_disease.training import train as train_mod
+
+    class DummyTrainer:
+        def __init__(self, **_k):
+            self.callbacks = []
+
+        def fit(self, model=None, datamodule=None):
+            return None
+
+    monkeypatch.setattr("pytorch_lightning.Trainer", DummyTrainer, raising=False)
+    monkeypatch.setattr(
+        "cassava_leaf_disease.data.dvc_pull",
+        lambda *a, **k: SimpleNamespace(success=True, message="ok"),
+    )
+
+    captured = {}
+
+    class DummyDataModule:
+        def __init__(self, _cfg):
+            pass
+
+        def setup(self, _stage=None):
+            return None
+
+        def train_class_weights(self):
+            return torch.ones((5,), dtype=torch.float32)
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self, _cfg, **kwargs):
+            super().__init__()
+            captured.update(kwargs)
+            self._p = torch.nn.Parameter(torch.zeros(()))
+
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.datamodule.CassavaDataModule",
+        DummyDataModule,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "cassava_leaf_disease.training.lightning_module.CassavaClassifier",
+        DummyModel,
+        raising=False,
+    )
+
+    cfg = OmegaConf.create(
+        {
+            "train": {
+                "seed": 1,
+                "epochs": 1,
+                "accelerator": "cpu",
+                "devices": 1,
+                "precision": "32-true",
+                "log_every_n_steps": 1,
+                "fast_dev_run": True,
+                "save_checkpoints": False,
+                "imbalance": {"strategy": "loss_weights"},
+                "artifacts": None,
+            },
+            "paths": {"data_dir": str(tmp_path), "outputs_dir": str(tmp_path)},
+            "logger": {"enabled": False},
+            "model": {"backbone": "resnet18", "pretrained": False, "dropout": 0.0},
+            "augment": {"image_size": 8, "mean": [0.5, 0.5, 0.5], "std": [0.2, 0.2, 0.2]},
+            "data": {
+                "dataset": {"num_classes": 5, "class_names": ["a", "b", "c", "d", "e"]},
+                "paths": {"train_csv": "missing.csv", "images_dir": "missing_dir"},
+                "split": {
+                    "strategy": "holdout",
+                    "val_size": 0.2,
+                    "seed": 42,
+                    "folds": 5,
+                    "fold_index": 0,
+                },
+                "synthetic": {
+                    "enabled": True,
+                    "fallback_if_missing": True,
+                    "seed": 1,
+                    "train_size": 4,
+                    "val_size": 2,
+                },
+                "limits": {"max_train_samples": None, "max_val_samples": None},
+            },
+        }
+    )
+    train_mod.train(cfg)
+    assert "class_weights" in captured
 
 
 def test_train_mlflow_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -119,7 +213,7 @@ def test_train_mlflow_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -205,7 +299,7 @@ def test_train_mlflow_exception(monkeypatch: pytest.MonkeyPatch, tmp_path) -> No
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -321,7 +415,7 @@ def test_train_artifacts_branch(monkeypatch: pytest.MonkeyPatch, tmp_path) -> No
     )
     monkeypatch.setattr(
         "cassava_leaf_disease.training.lightning_module.CassavaClassifier",
-        lambda _cfg: object(),
+        lambda _cfg, **_k: object(),
         raising=False,
     )
 
@@ -392,7 +486,7 @@ def test_train_artifacts_no_checkpoint(monkeypatch: pytest.MonkeyPatch, tmp_path
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -481,7 +575,7 @@ def test_train_s3_upload_missing_creds(monkeypatch: pytest.MonkeyPatch, tmp_path
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -577,7 +671,7 @@ def test_train_mlflow_artifact_no_run_id(monkeypatch: pytest.MonkeyPatch, tmp_pa
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -685,7 +779,7 @@ def test_train_mlflow_artifact_exception(monkeypatch: pytest.MonkeyPatch, tmp_pa
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -774,7 +868,7 @@ def test_train_checkpoint_not_exists(monkeypatch: pytest.MonkeyPatch, tmp_path) 
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -874,7 +968,7 @@ def test_train_s3_upload_success(monkeypatch: pytest.MonkeyPatch, tmp_path) -> N
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -979,7 +1073,7 @@ def test_train_s3_upload_failure(monkeypatch: pytest.MonkeyPatch, tmp_path) -> N
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 
@@ -1075,7 +1169,7 @@ def test_train_s3_upload_missing_deps(monkeypatch: pytest.MonkeyPatch, tmp_path)
             pass
 
     class DummyModel(torch.nn.Module):
-        def __init__(self, _cfg):
+        def __init__(self, _cfg, **_k):
             super().__init__()
             self._p = torch.nn.Parameter(torch.zeros(()))
 

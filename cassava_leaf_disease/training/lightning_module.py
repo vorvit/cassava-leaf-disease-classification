@@ -12,7 +12,7 @@ import torchmetrics
 
 
 class CassavaClassifier(pl.LightningModule):
-    def __init__(self, cfg: Any) -> None:
+    def __init__(self, cfg: Any, class_weights: torch.Tensor | None = None) -> None:
         super().__init__()
         self.save_hyperparameters(logger=False)
 
@@ -43,7 +43,13 @@ class CassavaClassifier(pl.LightningModule):
             label_smoothing = 0.0
         if loss_name != "cross_entropy":
             raise ValueError(f"Unsupported loss: {loss_name!r}. Supported: 'cross_entropy'")
-        self.loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+        if class_weights is not None:
+            self.loss_fn = nn.CrossEntropyLoss(
+                weight=class_weights.to(dtype=torch.float32),
+                label_smoothing=label_smoothing,
+            )
+        else:
+            self.loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.acc = torchmetrics.classification.MulticlassAccuracy(num_classes=num_classes)
         self.f1_macro = torchmetrics.classification.MulticlassF1Score(
             num_classes=num_classes,
@@ -152,4 +158,40 @@ class CassavaClassifier(pl.LightningModule):
             lr=lr,
             weight_decay=weight_decay,
         )
-        return optimizer
+
+        scheduler_cfg = getattr(train_cfg, "scheduler", None) if train_cfg else None
+        name = str(getattr(scheduler_cfg, "name", "none")).lower() if scheduler_cfg else "none"
+        if name in {"none", "null"}:
+            return optimizer
+
+        if name == "cosine":
+            t_max = int(getattr(scheduler_cfg, "t_max", getattr(train_cfg, "epochs", 1)))
+            eta_min = float(getattr(scheduler_cfg, "eta_min", 0.0))
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer,
+                T_max=max(1, t_max),
+                eta_min=eta_min,
+            )
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"},
+            }
+
+        if name in {"plateau", "reduce_on_plateau"}:
+            factor = float(getattr(scheduler_cfg, "factor", 0.5))
+            patience = int(getattr(scheduler_cfg, "patience", 1))
+            min_lr = float(getattr(scheduler_cfg, "min_lr", 1e-6))
+            monitor = str(getattr(scheduler_cfg, "monitor", "val/loss"))
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer=optimizer,
+                mode="min",
+                factor=factor,
+                patience=patience,
+                min_lr=min_lr,
+            )
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {"scheduler": scheduler, "monitor": monitor},
+            }
+
+        raise ValueError(f"Unsupported scheduler: {name!r}. Supported: none|cosine|plateau")

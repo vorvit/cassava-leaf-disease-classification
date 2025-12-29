@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ import pytorch_lightning as pl
 import torch
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.sampler import WeightedRandomSampler
 
 from cassava_leaf_disease.training.dataset import (
     CassavaCsvDataset,
@@ -37,6 +39,7 @@ class CassavaDataModule(pl.LightningDataModule):
 
         self._train_dataset: Dataset[Any] | None = None
         self._val_dataset: Dataset[Any] | None = None
+        self._train_labels: list[int] | None = None
 
     @staticmethod
     def _parse_optional_int(value: object) -> int | None:
@@ -112,6 +115,7 @@ class CassavaDataModule(pl.LightningDataModule):
             self._val_dataset = SyntheticCassavaDataset(
                 size=val_size, num_classes=num_classes, image_size=image_size, seed=seed + 1
             )
+            self._train_labels = [int(i % num_classes) for i in range(int(train_size))]
             return
 
         df = pd.read_csv(train_csv)
@@ -166,15 +170,59 @@ class CassavaDataModule(pl.LightningDataModule):
         self._val_dataset = CassavaCsvDataset(
             val_samples, images_dir=images_dir, transform=val_transform
         )
+        self._train_labels = [int(s.label) for s in train_samples]
+
+    def train_class_weights(self) -> torch.Tensor | None:
+        """Compute per-class weights from training labels (if available).
+
+        Used for imbalance handling (loss weighting / sampling).
+        """
+        if self._train_labels is None:
+            return None
+        num_classes = int(self.data_cfg.dataset.num_classes)
+        counts = Counter(self._train_labels)
+        if not counts:
+            return None
+
+        eps = 1e-6
+        weights = torch.zeros((num_classes,), dtype=torch.float32)
+        for class_index in range(num_classes):
+            count = float(counts.get(int(class_index), 0))
+            weights[int(class_index)] = 1.0 / max(eps, count)
+
+        # Normalize to keep average weight ~1 (more stable scale for CE loss).
+        weights = weights * (float(num_classes) / float(torch.sum(weights).item()))
+        return weights
 
     def train_dataloader(self) -> DataLoader:
         if self._train_dataset is None:
             raise RuntimeError("Call setup() before requesting dataloaders.")
         num_workers = self._resolve_num_workers()
+        sampler: WeightedRandomSampler | None = None
+        shuffle = True
+
+        train_cfg = getattr(self.cfg, "train", None)
+        imbalance_cfg = getattr(train_cfg, "imbalance", None) if train_cfg else None
+        strategy = (
+            str(getattr(imbalance_cfg, "strategy", "none")).lower() if imbalance_cfg else "none"
+        )
+        use_sampler = strategy in {"sampler", "both"}
+        if use_sampler:
+            class_weights = self.train_class_weights()
+            if class_weights is not None and self._train_labels is not None:
+                sample_weights = [float(class_weights[int(y)].item()) for y in self._train_labels]
+                sampler = WeightedRandomSampler(
+                    weights=sample_weights,
+                    num_samples=len(sample_weights),
+                    replacement=True,
+                )
+                shuffle = False
+
         return DataLoader(
             self._train_dataset,
             batch_size=int(self.cfg.train.batch_size),
-            shuffle=True,
+            shuffle=shuffle,
+            sampler=sampler,
             num_workers=num_workers,
             pin_memory=self._resolve_pin_memory(),
             persistent_workers=(num_workers > 0),

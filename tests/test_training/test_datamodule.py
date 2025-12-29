@@ -99,6 +99,50 @@ def test_datamodule_holdout_and_parse_helpers(tmp_path, monkeypatch: pytest.Monk
     assert len(batch) == 2
 
 
+def test_datamodule_imbalance_sampler(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import cassava_leaf_disease.training.datamodule as dm_mod
+    from cassava_leaf_disease.training.datamodule import CassavaDataModule
+
+    images_dir = tmp_path / "train_images"
+    images_dir.mkdir()
+    for name in ["a0.jpg", "a1.jpg", "a2.jpg", "b0.jpg", "b1.jpg"]:
+        Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(images_dir / name)
+
+    train_csv = tmp_path / "train.csv"
+    # class 0 is 3x more frequent than class 1
+    train_csv.write_text(
+        "image_id,label\na0.jpg,0\na1.jpg,0\na2.jpg,0\nb0.jpg,1\nb1.jpg,1\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        dm_mod,
+        "build_transforms",
+        lambda *_a, **_k: (lambda image: {"image": torch.zeros((3, 8, 8))}),
+    )
+
+    cfg = SimpleNamespace(
+        train=SimpleNamespace(
+            seed=1,
+            batch_size=2,
+            num_workers=0,
+            imbalance=SimpleNamespace(strategy="sampler"),
+        ),
+        augment=SimpleNamespace(image_size=8, mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2]),
+        data=SimpleNamespace(
+            dataset=SimpleNamespace(num_classes=2),
+            paths=SimpleNamespace(train_csv=str(train_csv), images_dir=str(images_dir)),
+            split=SimpleNamespace(strategy="holdout", val_size=0.5, seed=1, folds=5, fold_index=0),
+            synthetic=SimpleNamespace(enabled=False, fallback_if_missing=False),
+            limits=None,
+        ),
+    )
+    dm = CassavaDataModule(cfg)
+    dm.setup()
+    loader = dm.train_dataloader()
+    assert loader.sampler is not None
+
+
 def test_datamodule_kfold(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     import cassava_leaf_disease.training.datamodule as dm_mod
     from cassava_leaf_disease.training.datamodule import CassavaDataModule
@@ -187,6 +231,42 @@ def test_datamodule_resolve_num_workers_branches(monkeypatch: pytest.MonkeyPatch
     )
     dm2 = dm_mod.CassavaDataModule(cfg2)
     assert dm2._resolve_num_workers() == 4
+
+    # Explicit num_workers + Windows + CUDA hits the second guard branch.
+    monkeypatch.setattr(dm_mod.sys, "platform", "win32")
+    monkeypatch.setattr(dm_mod.torch.cuda, "is_available", lambda: True)
+    cfg3 = SimpleNamespace(
+        train=SimpleNamespace(num_workers=4),
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        augment=SimpleNamespace(),
+    )
+    dm3 = dm_mod.CassavaDataModule(cfg3)
+    assert dm3._resolve_num_workers() == 0
+
+
+def test_datamodule_train_class_weights_none() -> None:
+    from cassava_leaf_disease.training.datamodule import CassavaDataModule
+
+    cfg = SimpleNamespace(
+        train=SimpleNamespace(num_workers=0),
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=2)),
+        augment=SimpleNamespace(),
+    )
+    dm = CassavaDataModule(cfg)
+    assert dm.train_class_weights() is None
+
+
+def test_datamodule_train_class_weights_empty_labels() -> None:
+    from cassava_leaf_disease.training.datamodule import CassavaDataModule
+
+    cfg = SimpleNamespace(
+        train=SimpleNamespace(num_workers=0),
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=2)),
+        augment=SimpleNamespace(),
+    )
+    dm = CassavaDataModule(cfg)
+    dm._train_labels = []
+    assert dm.train_class_weights() is None
 
 
 def test_datamodule_resolve_pin_memory(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -26,7 +26,17 @@ def train(cfg: Any) -> None:
         print(f"[dvc] pull failed (continuing): {pull_result.message}")
 
     datamodule = CassavaDataModule(cfg)
-    model = CassavaClassifier(cfg)
+    setup = getattr(datamodule, "setup", None)
+    if callable(setup):
+        setup("fit")
+
+    train_cfg = getattr(cfg, "train", None)
+    imbalance_cfg = getattr(train_cfg, "imbalance", None) if train_cfg else None
+    strategy = str(getattr(imbalance_cfg, "strategy", "none")).lower() if imbalance_cfg else "none"
+    use_loss_weights = strategy in {"loss_weights", "both"}
+    class_weights = datamodule.train_class_weights() if use_loss_weights else None
+
+    model = CassavaClassifier(cfg, class_weights=class_weights)
 
     outputs_dir = Path(str(cfg.paths.outputs_dir))
     outputs_dir.mkdir(parents=True, exist_ok=True)

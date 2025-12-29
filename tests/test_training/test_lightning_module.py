@@ -49,6 +49,68 @@ def test_lightning_module_with_stubbed_timm(monkeypatch: pytest.MonkeyPatch) -> 
     assert opt is not None
 
 
+def test_lightning_module_scheduler_cosine(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.training import lightning_module
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(*_a, **_k):
+            return torch.nn.Linear(1, 5)
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(backbone="resnet18", pretrained=False, dropout=0.0),
+        train=SimpleNamespace(
+            lr=1e-3,
+            weight_decay=0.0,
+            loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0),
+            scheduler=SimpleNamespace(name="cosine", t_max=1, eta_min=0.0),
+            epochs=1,
+        ),
+    )
+
+    model = lightning_module.CassavaClassifier(cfg)
+    out = model.configure_optimizers()
+    assert isinstance(out, dict)
+    assert "optimizer" in out
+    assert "lr_scheduler" in out
+
+
+def test_lightning_module_scheduler_plateau(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.training import lightning_module
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(*_a, **_k):
+            return torch.nn.Linear(1, 5)
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(backbone="resnet18", pretrained=False, dropout=0.0),
+        train=SimpleNamespace(
+            lr=1e-3,
+            weight_decay=0.0,
+            loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0),
+            scheduler=SimpleNamespace(
+                name="plateau",
+                factor=0.5,
+                patience=1,
+                min_lr=1e-6,
+                monitor="val/loss",
+            ),
+        ),
+    )
+
+    model = lightning_module.CassavaClassifier(cfg)
+    out = model.configure_optimizers()
+    assert isinstance(out, dict)
+    assert out["lr_scheduler"]["monitor"] == "val/loss"
+
+
 def test_lightning_module_freeze_backbone(monkeypatch: pytest.MonkeyPatch) -> None:
     from cassava_leaf_disease.training import lightning_module
 
@@ -185,3 +247,48 @@ def test_lightning_module_no_train_cfg(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     model = lightning_module.CassavaClassifier(cfg)
     assert model.loss_fn is not None
+
+
+def test_lightning_module_class_weights(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.training import lightning_module
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(*_a, **_k):
+            return torch.nn.Linear(1, 5)
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(backbone="resnet18", pretrained=False, dropout=0.0),
+        train=SimpleNamespace(loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0)),
+    )
+    weights = torch.ones((5,), dtype=torch.float32)
+    model = lightning_module.CassavaClassifier(cfg, class_weights=weights)
+    assert model.loss_fn.weight is not None
+
+
+def test_lightning_module_scheduler_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cassava_leaf_disease.training import lightning_module
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(*_a, **_k):
+            return torch.nn.Linear(1, 5)
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(backbone="resnet18", pretrained=False, dropout=0.0),
+        train=SimpleNamespace(
+            lr=1e-3,
+            weight_decay=0.0,
+            loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0),
+            scheduler=SimpleNamespace(name="wtf"),
+        ),
+    )
+    model = lightning_module.CassavaClassifier(cfg)
+    with pytest.raises(ValueError, match="Unsupported scheduler"):
+        model.configure_optimizers()
