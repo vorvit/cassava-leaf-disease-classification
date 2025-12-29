@@ -80,7 +80,8 @@ class CassavaFireCLI:
           cassava-fire train --epochs 1 --synthetic --no-mlflow
           cassava-fire train --epochs 2 --batch_size 32 train.precision=16-mixed
         """
-        from cassava_leaf_disease.commands import main as hydra_main
+        from cassava_leaf_disease.commands import compose_cfg
+        from cassava_leaf_disease.training.train import train as train_impl
 
         hydra_overrides: list[str] = []
         if epochs is not None:
@@ -100,7 +101,8 @@ class CassavaFireCLI:
         if mlflow is not None:
             hydra_overrides.append(f"logger.enabled={_bool_override(_parse_bool(mlflow))}")
 
-        hydra_main(["train", *hydra_overrides, *overrides])
+        cfg = compose_cfg("train", [*hydra_overrides, *overrides])
+        train_impl(cfg)
 
     def infer(
         self,
@@ -115,7 +117,8 @@ class CassavaFireCLI:
         Examples:
           cassava-fire infer --image data/cassava/train_images/xxx.jpg --ckpt outputs/.../best.ckpt
         """
-        from cassava_leaf_disease.commands import main as hydra_main
+        from cassava_leaf_disease.commands import compose_cfg
+        from cassava_leaf_disease.serving.infer import infer as infer_impl
 
         hydra_overrides: list[str] = []
         if image is not None:
@@ -127,7 +130,8 @@ class CassavaFireCLI:
         if top_k is not None:
             hydra_overrides.append(f"infer.top_k={int(top_k)}")
 
-        hydra_main(["infer", *hydra_overrides, *overrides])
+        cfg = compose_cfg("infer", [*hydra_overrides, *overrides])
+        infer_impl(cfg)
 
     def raw(self, command: str, *overrides: str) -> None:
         """Forward any Hydra command verbatim.

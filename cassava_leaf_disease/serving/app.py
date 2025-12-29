@@ -55,8 +55,8 @@ def create_app() -> FastAPI:
             from omegaconf import OmegaConf
 
             # Load default configs from repo, to reuse the same preprocessing/model settings.
-            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-            cfg = OmegaConf.load(os.path.join(repo_root, "configs", "infer.yaml"))
+            repo_root = Path(__file__).resolve().parents[2]
+            cfg = OmegaConf.load(str(repo_root / "configs" / "infer.yaml"))
             # ensure dataset class_names are aligned with serving config
             cfg.data.dataset.class_names = class_names
             device = _resolve_device(device_env)

@@ -137,6 +137,21 @@ def _run_infer(overrides: list[str]) -> None:
     infer(cfg)
 
 
+def compose_cfg(config_name: str, overrides: list[str]) -> object:
+    """Compose Hydra config from `<repo>/configs` directory.
+
+    This helper exists so that other CLIs (e.g. fire wrapper) can use Hydra's compose API
+    without duplicating path/initialization logic.
+    """
+    from pathlib import Path
+
+    from hydra import compose, initialize_config_dir
+
+    config_dir = (Path(__file__).resolve().parents[1] / "configs").resolve()
+    with initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
+        return compose(config_name=str(config_name), overrides=list(overrides))
+
+
 def _ensure_utf8_stdio() -> None:
     """Ensure UTF-8 stdout/stderr on Windows consoles.
 
