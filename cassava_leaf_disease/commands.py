@@ -41,7 +41,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if command in {"download-data", "download_data"}:
-        raise SystemExit("download-data is not implemented.")
+        if _wants_help(command_args):
+            _print_download_data_help()
+            return
+        _run_download_data(command_args)
+        return
 
     raise SystemExit(f"Unknown command: {command!r}. Try `python -m cassava_leaf_disease --help`.")
 
@@ -55,9 +59,10 @@ def _print_help() -> None:
                 "Usage:",
                 "  python -m cassava_leaf_disease <command> [args...]",
                 "",
-                "Commands (will be implemented in Task2):",
+                "Commands:",
                 "  train          Train a model (runs DVC pull first)",
                 "  infer          Run inference on an image (runs DVC pull first)",
+                "  download-data  Download and extract dataset from a public link",
             ]
         )
     )
@@ -104,6 +109,28 @@ def _print_infer_help() -> None:
                 "  python -m cassava_leaf_disease infer infer.image_path=... "
                 "infer.checkpoint_path=outputs/.../best.ckpt",
                 "  python -m cassava_leaf_disease infer infer.image_path=... logger.enabled=false",
+            ]
+        )
+    )
+
+
+def _print_download_data_help() -> None:
+    print(
+        "\n".join(
+            [
+                "cassava_leaf_disease download-data",
+                "",
+                "Usage:",
+                "  python -m cassava_leaf_disease download-data [hydra_overrides...]",
+                "",
+                "Notes:",
+                "  This is a convenience helper for a public dataset bundle.",
+                "  It downloads an archive and extracts it into `paths.data_dir`.",
+                "",
+                "Examples:",
+                "  python -m cassava_leaf_disease download-data",
+                "  python -m cassava_leaf_disease download-data download_data.force=true",
+                "  python -m cassava_leaf_disease download-data paths.data_dir=data/cassava",
             ]
         )
     )
@@ -177,6 +204,17 @@ def _run_infer(overrides: list[str]) -> None:
     from cassava_leaf_disease.serving.infer import infer
 
     infer(cfg)
+
+
+def _run_download_data(overrides: list[str]) -> None:
+    cfg = compose_cfg("download_data", overrides)
+
+    from cassava_leaf_disease.data.download_data import download_data
+
+    result = download_data(cfg)
+    if not result.success:
+        raise SystemExit(f"download-data failed: {result.message}")
+    print(f"[download-data] {result.message}")
 
 
 def _sanitize_overrides(overrides: list[str]) -> list[str]:

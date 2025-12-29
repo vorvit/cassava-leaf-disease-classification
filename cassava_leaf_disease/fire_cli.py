@@ -41,6 +41,8 @@ def _normalize_fire_args(args: list[str]) -> list[str]:
     We also support a couple of common `--no-xxx` negations.
     """
     mapping = {
+        # Command aliases
+        "download-data": "download_data",
         "--no-mlflow": "--mlflow=false",
         "--no_mlflow": "--mlflow=false",
         "--mlflow": "--mlflow=true",
@@ -142,6 +144,26 @@ class CassavaFireCLI:
         from cassava_leaf_disease.commands import main as hydra_main
 
         hydra_main([str(command), *overrides])
+
+    def download_data(self, force: bool | None = None, *overrides: str) -> None:
+        """Download and extract dataset from a public link.
+
+        Examples:
+          cassava-fire download_data
+          cassava-fire download_data --force
+        """
+        from cassava_leaf_disease.commands import compose_cfg
+        from cassava_leaf_disease.data.download_data import download_data as impl
+
+        hydra_overrides: list[str] = []
+        if force is not None:
+            hydra_overrides.append(f"download_data.force={_bool_override(_parse_bool(force))}")
+
+        cfg = compose_cfg("download_data", [*hydra_overrides, *overrides])
+        result = impl(cfg)
+        if not result.success:
+            raise SystemExit(f"download-data failed: {result.message}")
+        print(f"[download-data] {result.message}")
 
 
 def main(argv: Sequence[str] | None = None) -> None:

@@ -72,6 +72,20 @@ Dataset: **Cassava Leaf Disease Classification** (Kaggle, 2020).
   - strong class imbalance (class 3 ≈ 61%)
   - field images: varying lighting, angles, backgrounds
 
+## Quick dataset download (public link)
+
+If DVC pull is not available, you can download a public archive and extract it into `data/cassava/`:
+
+```bash
+python -m uv run cassava download-data
+```
+
+Options:
+
+```bash
+python -m uv run cassava download-data download_data.force=true
+```
+
 ## Modeling
 
 ### Baseline (implemented)

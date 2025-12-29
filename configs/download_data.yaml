@@ -1,0 +1,13 @@
+defaults:
+  - data: cassava
+  - _self_
+
+paths:
+  data_dir: data/cassava
+  outputs_dir: outputs
+
+download_data:
+  # Public Yandex Disk link (legal substitute dataset bundle for the project)
+  public_url: "https://disk.yandex.ru/d/yynYg9MQp_NgdA"
+  # If true, re-download / overwrite existing extracted files.
+  force: false
