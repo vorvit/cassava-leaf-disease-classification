@@ -13,6 +13,9 @@ diseases. Manual diagnosis requires expert knowledge that is not always availabl
 Project goal: build an industrial‑grade MLOps pipeline for training and (optionally) deployment of an
 image classifier for 5 classes (4 diseases + healthy).
 
+This is a learning project to practice MLOps tooling on a real-world CV task, while keeping the training
+cycle reproducible and the inference path ready for later optimization.
+
 ## Input / output format (target API)
 
 ### Input
@@ -50,14 +53,48 @@ Classes:
 
 ## Metrics
 
-- **Accuracy**: Kaggle primary metric
-- **F1‑Macro**: for class imbalance (CMD dominates)
+- **Accuracy**: Kaggle primary metric. Target reference: > 0.88 (SOTA benchmark).
+- **F1‑Macro**: for class imbalance (CMD dominates).
 
 ## Validation
 
 - **Stratified K‑Fold (5 folds)**: `data.split.strategy=kfold`
 - **Hold‑out**: default `data.split.strategy=holdout`
 - **Reproducibility**: fixed seeds, Hydra configs, DVC for data
+
+## Dataset
+
+Dataset: **Cassava Leaf Disease Classification** (Kaggle, 2020).
+
+- **Size**: 21,397 labeled images
+- **Notes**:
+  - noisy labels (future: label smoothing / specialized losses)
+  - strong class imbalance (class 3 ≈ 61%)
+  - field images: varying lighting, angles, backgrounds
+
+## Modeling
+
+### Baseline (implemented)
+
+- fine‑tuning **ResNet18** via `timm` (ImageNet pretrained)
+- basic augmentations (resize/normalize)
+- training with **PyTorch Lightning**
+- baseline target reference: Accuracy ≈ 0.80
+
+### Main model (planned / roadmap)
+
+- **EfficientNet‑B4** (or B3)
+- **Vision Transformer (ViT Base 384)**
+- model ensemble
+- inference optimization via **TensorRT (FP16)**
+
+## Deployment (planned / roadmap)
+
+- **NVIDIA Triton Inference Server**
+- preprocessing model (Python backend or DALI)
+- Triton Ensemble (averaging/voting)
+- external REST API via **FastAPI** + client (e.g., Telegram bot)
+- automation via GitHub Actions
 
 ## Data (DVC)
 
