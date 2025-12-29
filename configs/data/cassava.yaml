@@ -1,0 +1,18 @@
+dataset:
+  name: cassava-leaf-disease-classification
+  num_classes: 5
+  class_names:
+    - Cassava Bacterial Blight
+    - Cassava Brown Streak Disease
+    - Cassava Green Mottle
+    - Cassava Mosaic Disease
+    - Healthy
+
+paths:
+  train_csv: ${paths.data_dir}/train.csv
+  images_dir: ${paths.data_dir}/train_images
+
+split:
+  strategy: holdout
+  val_size: 0.2
+  seed: ${train.seed}

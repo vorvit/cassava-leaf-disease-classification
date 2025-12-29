@@ -1,0 +1,27 @@
+defaults:
+  - data: cassava
+  - model: resnet18
+  - augment: basic
+  - logger: mlflow
+  - _self_
+
+paths:
+  data_dir: data/cassava
+  outputs_dir: outputs
+
+train:
+  seed: 42
+  epochs: 1
+  batch_size: 16
+  num_workers: 4
+  lr: 0.0003
+  weight_decay: 0.0001
+  precision: 32
+  accelerator: auto
+  devices: auto
+  log_every_n_steps: 10
+  fast_dev_run: false
+
+hydra:
+  run:
+    dir: ${paths.outputs_dir}/${now:%Y-%m-%d}/${now:%H-%M-%S}

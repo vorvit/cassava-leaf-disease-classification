@@ -1,0 +1,5 @@
+model:
+  backbone: resnet18
+  pretrained: true
+  dropout: 0.0
+  num_classes: ${data.dataset.num_classes}
