@@ -44,6 +44,8 @@ All notable changes to this project will be documented in this file.
 
 - update changelog (ecfebc6)
 
+- update changelog (b38b7c5)
+
 ### Docs
 
 - expand README for task2 workflow (4736d10)
@@ -57,6 +59,8 @@ All notable changes to this project will be documented in this file.
 - rewrite onboarding instructions (24832b1)
 
 - add train.save_checkpoints=true to training examples (808fa35)
+
+- rewrite CLI commands with Fire CLI and relative paths (2c6d571)
 
 ### Features
 
