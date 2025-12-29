@@ -1,0 +1,9 @@
+Example environment variables for Yandex Object Storage (S3) access.
+
+DO NOT commit real credentials. Use environment variables locally.
+
+PowerShell:
+  $env:AWS_ACCESS_KEY_ID="REPLACE_ME"
+  $env:AWS_SECRET_ACCESS_KEY="REPLACE_ME"
+  $env:AWS_DEFAULT_REGION="ru-central1"
+  $env:AWS_ENDPOINT_URL="https://storage.yandexcloud.net"
