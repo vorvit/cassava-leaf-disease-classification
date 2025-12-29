@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytorch_lightning as pl
+import torch
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from torch.utils.data import DataLoader
 
@@ -34,6 +37,30 @@ class CassavaDataModule(pl.LightningDataModule):
 
         self._train_dataset = None
         self._val_dataset = None
+
+    def _resolve_num_workers(self) -> int:
+        raw = getattr(self.cfg.train, "num_workers", 0)
+        if isinstance(raw, str) and raw.lower() == "auto":
+            # Windows multiprocessing often causes instability / high memory overhead
+            # for torch DataLoader workers (especially in constrained environments).
+            # For a predictable "it just runs" experience we default to 0 on Windows.
+            if sys.platform.startswith("win"):
+                return 0
+
+            cpu_count = os.cpu_count() or 0
+            num_workers = max(0, cpu_count - 1)
+        else:
+            num_workers = int(raw)
+
+        # Windows + CUDA: keep single-process loading to avoid common worker crashes.
+        if sys.platform.startswith("win") and torch.cuda.is_available():
+            return 0
+
+        return max(0, num_workers)
+
+    def _resolve_pin_memory(self) -> bool:
+        # Only useful when CUDA is available; otherwise it produces a warning.
+        return bool(torch.cuda.is_available())
 
     def prepare_data(self) -> None:
         # DVC pull is handled at a higher level (CLI), to keep this module reusable.
@@ -129,21 +156,25 @@ class CassavaDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         if self._train_dataset is None:
             raise RuntimeError("Call setup() before requesting dataloaders.")
+        num_workers = self._resolve_num_workers()
         return DataLoader(
             self._train_dataset,
             batch_size=int(self.cfg.train.batch_size),
             shuffle=True,
-            num_workers=int(self.cfg.train.num_workers),
-            pin_memory=True,
+            num_workers=num_workers,
+            pin_memory=self._resolve_pin_memory(),
+            persistent_workers=(num_workers > 0),
         )
 
     def val_dataloader(self) -> DataLoader:
         if self._val_dataset is None:
             raise RuntimeError("Call setup() before requesting dataloaders.")
+        num_workers = self._resolve_num_workers()
         return DataLoader(
             self._val_dataset,
             batch_size=int(self.cfg.train.batch_size),
             shuffle=False,
-            num_workers=int(self.cfg.train.num_workers),
-            pin_memory=True,
+            num_workers=num_workers,
+            pin_memory=self._resolve_pin_memory(),
+            persistent_workers=(num_workers > 0),
         )

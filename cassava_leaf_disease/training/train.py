@@ -8,6 +8,8 @@ from typing import Any
 
 def train(cfg: Any) -> None:
     """Run training using Hydra-composed config."""
+    import warnings
+
     import pytorch_lightning as pl
     from pytorch_lightning.loggers import CSVLogger
 
@@ -15,6 +17,20 @@ def train(cfg: Any) -> None:
     from cassava_leaf_disease.training.datamodule import CassavaDataModule
     from cassava_leaf_disease.training.lightning_module import CassavaClassifier
     from cassava_leaf_disease.utils.git import get_git_commit_id
+
+    # Reduce noise in console logs for Task2 checks / local debugging.
+    # These warnings are informative, but not actionable on Windows where
+    # num_workers=0 is often required.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The '.*_dataloader' does not have many workers.*",
+        category=UserWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*pin_memory.*no accelerator is found.*",
+        category=UserWarning,
+    )
 
     pl.seed_everything(int(cfg.train.seed), workers=True)
 
