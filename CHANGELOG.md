@@ -42,6 +42,8 @@ All notable changes to this project will be documented in this file.
 
 - update changelog (a1b5167)
 
+- update changelog (ecfebc6)
+
 ### Docs
 
 - expand README for task2 workflow (4736d10)
@@ -53,6 +55,8 @@ All notable changes to this project will be documented in this file.
 - clarify uv run --no-sync for CUDA torch (0591feb)
 
 - rewrite onboarding instructions (24832b1)
+
+- add train.save_checkpoints=true to training examples (808fa35)
 
 ### Features
 
