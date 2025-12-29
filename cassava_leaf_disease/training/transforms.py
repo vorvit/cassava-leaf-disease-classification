@@ -16,10 +16,14 @@ def build_transforms(augment_cfg: Any, is_train: bool) -> Any:
 
     transforms: list[Any] = [alb.Resize(image_size, image_size)]
     if is_train:
+        horizontal_flip_p = float(getattr(augment_cfg, "horizontal_flip_p", 0.5))
+        random_brightness_contrast_p = float(
+            getattr(augment_cfg, "random_brightness_contrast_p", 0.2)
+        )
         transforms.extend(
             [
-                alb.HorizontalFlip(p=0.5),
-                alb.RandomBrightnessContrast(p=0.2),
+                alb.HorizontalFlip(p=horizontal_flip_p),
+                alb.RandomBrightnessContrast(p=random_brightness_contrast_p),
             ]
         )
     transforms.extend(

@@ -12,17 +12,13 @@ import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from PIL import Image
 
+from cassava_leaf_disease.utils.config import get_default_class_names
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Cassava leaf disease classification")
 
-    class_names = [
-        "Cassava Bacterial Blight",
-        "Cassava Brown Streak Disease",
-        "Cassava Green Mottle",
-        "Cassava Mosaic Disease",
-        "Healthy",
-    ]
+    class_names = get_default_class_names()
 
     @app.get("/health")
     def health() -> dict[str, str]:

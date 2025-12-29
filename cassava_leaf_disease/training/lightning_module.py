@@ -27,7 +27,17 @@ class CassavaClassifier(pl.LightningModule):
             num_classes=num_classes,
             drop_rate=float(cfg.model.dropout),
         )
-        self.loss_fn = nn.CrossEntropyLoss()
+
+        loss_cfg = getattr(cfg.train, "loss", None)
+        if loss_cfg:
+            loss_name = str(getattr(loss_cfg, "name", "cross_entropy")).lower()
+            label_smoothing = float(getattr(loss_cfg, "label_smoothing", 0.0))
+        else:
+            loss_name = "cross_entropy"
+            label_smoothing = 0.0
+        if loss_name != "cross_entropy":
+            raise ValueError(f"Unsupported loss: {loss_name!r}. Supported: 'cross_entropy'")
+        self.loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.acc = torchmetrics.classification.MulticlassAccuracy(num_classes=num_classes)
         self.f1_macro = torchmetrics.classification.MulticlassF1Score(
             num_classes=num_classes,
