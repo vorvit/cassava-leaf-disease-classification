@@ -48,6 +48,8 @@ All notable changes to this project will be documented in this file.
 
 - update changelog (8fe693c)
 
+- update changelog (5cf57df)
+
 ### Docs
 
 - expand README for task2 workflow (4736d10)
@@ -63,6 +65,8 @@ All notable changes to this project will be documented in this file.
 - add train.save_checkpoints=true to training examples (808fa35)
 
 - rewrite CLI commands with Fire CLI and relative paths (2c6d571)
+
+- clarify checkpoint paths for inference (b103fc8)
 
 ### Features
 
@@ -111,6 +115,8 @@ All notable changes to this project will be documented in this file.
 - normalize max_time to DD:HH:MM:SS for Lightning Timer (2882636)
 
 - resolve paths relative to project root (7023cc3)
+
+- improve null checkpoint_path handling (0b21176)
 
 ### refactor
 
