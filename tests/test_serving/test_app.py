@@ -200,3 +200,89 @@ def test_fastapi_app_invalid_image(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(app_mod.HTTPException) as exc:
         asyncio.run(predict(upload))  # type: ignore[misc]
     assert exc.value.status_code == 400
+
+
+def test_fastapi_app_checkpoint_not_exists(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test app when checkpoint path doesn't exist."""
+    import cassava_leaf_disease.serving.app as app_mod
+
+    monkeypatch.setenv("CASSAVA_CHECKPOINT_PATH", str(tmp_path / "missing.ckpt"))
+    monkeypatch.setenv("CASSAVA_DEVICE", "cpu")
+
+    from omegaconf import OmegaConf
+
+    monkeypatch.setattr(
+        OmegaConf,
+        "load",
+        lambda *_a, **_k: OmegaConf.create(
+            {"data": {"dataset": {"class_names": []}}, "augment": {}}
+        ),
+    )
+
+    app = app_mod.create_app()
+    predict = None
+    for route in app.routes:
+        if getattr(route, "path", None) == "/predict":
+            predict = route.endpoint
+            break
+
+    buf = BytesIO()
+    Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(buf, format="PNG")
+    buf.seek(0)
+    upload = UploadFile(
+        filename="x.png",
+        file=BytesIO(buf.getvalue()),
+        headers={"content-type": "image/png"},
+    )
+    with pytest.raises(app_mod.HTTPException) as exc:
+        asyncio.run(predict(upload))  # type: ignore[misc]
+    assert exc.value.status_code == 503
+    assert "does not exist" in exc.value.detail
+
+
+def test_fastapi_app_s3_download_failure(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test app when S3 download fails."""
+    import cassava_leaf_disease.serving.app as app_mod
+
+    monkeypatch.delenv("CASSAVA_CHECKPOINT_PATH", raising=False)
+    monkeypatch.setenv("CASSAVA_CHECKPOINT_S3_URI", "s3://b/x/best.ckpt")
+    monkeypatch.setenv("CASSAVA_DEVICE", "cpu")
+
+    def fake_download_checkpoint_from_s3_uri(**_k):
+        return type("R", (), {"success": False, "path": None, "message": "download failed"})()
+
+    monkeypatch.setattr(
+        app_mod,
+        "download_checkpoint_from_s3_uri",
+        fake_download_checkpoint_from_s3_uri,
+    )
+
+    from omegaconf import OmegaConf
+
+    monkeypatch.setattr(
+        OmegaConf,
+        "load",
+        lambda *_a, **_k: OmegaConf.create(
+            {"data": {"dataset": {"class_names": []}}, "augment": {}}
+        ),
+    )
+
+    app = app_mod.create_app()
+    predict = None
+    for route in app.routes:
+        if getattr(route, "path", None) == "/predict":
+            predict = route.endpoint
+            break
+
+    buf = BytesIO()
+    Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(buf, format="PNG")
+    buf.seek(0)
+    upload = UploadFile(
+        filename="x.png",
+        file=BytesIO(buf.getvalue()),
+        headers={"content-type": "image/png"},
+    )
+    with pytest.raises(app_mod.HTTPException) as exc:
+        asyncio.run(predict(upload))  # type: ignore[misc]
+    assert exc.value.status_code == 503
+    assert "download failed" in exc.value.detail

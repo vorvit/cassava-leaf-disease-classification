@@ -292,3 +292,115 @@ def test_lightning_module_scheduler_unsupported(monkeypatch: pytest.MonkeyPatch)
     model = lightning_module.CassavaClassifier(cfg)
     with pytest.raises(ValueError, match="Unsupported scheduler"):
         model.configure_optimizers()
+
+
+def test_lightning_module_iter_head_params_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test _iter_head_params fallback to classifier/fc/head attributes."""
+    from cassava_leaf_disease.training import lightning_module
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self, num_classes: int):
+            super().__init__()
+            self.num_classes = num_classes
+            # No get_classifier, but has 'fc' attribute
+            self.fc = torch.nn.Linear(1, num_classes)
+
+        def forward(self, x):
+            return torch.zeros((x.shape[0], self.num_classes), dtype=torch.float32)
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(_backbone, pretrained, num_classes, drop_rate):
+            return DummyModel(int(num_classes))
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(backbone="resnet18", pretrained=False, dropout=0.0),
+        train=SimpleNamespace(loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0)),
+    )
+
+    model = lightning_module.CassavaClassifier(cfg)
+    # Test that _iter_head_params works with 'fc' fallback
+    params = list(model._iter_head_params())
+    assert len(params) > 0
+
+
+def test_lightning_module_iter_head_params_classifier_attr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test _iter_head_params with 'classifier' attribute."""
+    from cassava_leaf_disease.training import lightning_module
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self, num_classes: int):
+            super().__init__()
+            self.num_classes = num_classes
+            self.classifier = torch.nn.Linear(1, num_classes)
+
+        def forward(self, x):
+            return torch.zeros((x.shape[0], self.num_classes), dtype=torch.float32)
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(_backbone, pretrained, num_classes, drop_rate):
+            return DummyModel(int(num_classes))
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(backbone="resnet18", pretrained=False, dropout=0.0),
+        train=SimpleNamespace(loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0)),
+    )
+
+    model = lightning_module.CassavaClassifier(cfg)
+    params = list(model._iter_head_params())
+    assert len(params) > 0
+
+
+def test_lightning_module_on_train_epoch_start_no_unfreeze(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test on_train_epoch_start when unfreeze_epoch is None."""
+    from cassava_leaf_disease.training import lightning_module
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(*_a, **_k):
+            return torch.nn.Linear(1, 5)
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(
+            backbone="resnet18", pretrained=False, dropout=0.0, unfreeze_epoch=None
+        ),
+        train=SimpleNamespace(loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0)),
+    )
+
+    model = lightning_module.CassavaClassifier(cfg)
+    model.on_train_epoch_start()  # Should return early
+
+
+def test_lightning_module_on_train_epoch_start_invalid_unfreeze(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test on_train_epoch_start with invalid unfreeze_epoch."""
+    from cassava_leaf_disease.training import lightning_module
+
+    class FakeTimm:
+        @staticmethod
+        def create_model(*_a, **_k):
+            return torch.nn.Linear(1, 5)
+
+    monkeypatch.setitem(__import__("sys").modules, "timm", FakeTimm)
+
+    cfg = SimpleNamespace(
+        data=SimpleNamespace(dataset=SimpleNamespace(num_classes=5)),
+        model=SimpleNamespace(
+            backbone="resnet18", pretrained=False, dropout=0.0, unfreeze_epoch="invalid"
+        ),
+        train=SimpleNamespace(loss=SimpleNamespace(name="cross_entropy", label_smoothing=0.0)),
+    )
+
+    model = lightning_module.CassavaClassifier(cfg)
+    model.on_train_epoch_start()  # Should handle invalid value gracefully
