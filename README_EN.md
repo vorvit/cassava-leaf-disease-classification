@@ -396,13 +396,7 @@ python -m uv run cassava-fire infer `
   --ckpt artifacts/best.ckpt
 ```
 
-Or for checkpoint from latest training:
-
-```powershell
-python -m uv run cassava-fire infer `
-  --image data/cassava/test_image/2216849948.jpg `
-  --ckpt outputs/runs/version_18/checkpoints/best.ckpt
-```
+**Note:** If `--ckpt` is not specified, the command will automatically find the latest checkpoint in `outputs/runs/version_X/checkpoints/best.ckpt` (by modification time).
 
 **With S3 download:**
 
