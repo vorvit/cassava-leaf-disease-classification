@@ -1,6 +1,6 @@
 defaults:
   - data: cassava
-  - model: resnet18
+  - model: efficientnet_b0
   - augment: basic
   - logger: mlflow
   - _self_

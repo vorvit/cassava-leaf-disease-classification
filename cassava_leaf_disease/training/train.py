@@ -100,10 +100,14 @@ def train(cfg: Any) -> None:
     from pytorch_lightning.callbacks import Callback
     from pytorch_lightning.loggers import CSVLogger, Logger
 
+    from cassava_leaf_disease.commands import _ensure_utf8_stdio
     from cassava_leaf_disease.data import dvc_pull
     from cassava_leaf_disease.training.datamodule import CassavaDataModule
     from cassava_leaf_disease.training.lightning_module import CassavaClassifier
     from cassava_leaf_disease.utils.git import get_git_commit_id
+
+    # Ensure UTF-8 encoding for Windows consoles (prevents MLflow emoji encoding errors)
+    _ensure_utf8_stdio()
 
     pl.seed_everything(int(cfg.train.seed), workers=True)
 

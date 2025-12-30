@@ -218,6 +218,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     import fire
 
+    from cassava_leaf_disease.commands import _ensure_utf8_stdio
+
+    _ensure_utf8_stdio()
     args = sys.argv[1:] if argv is None else list(argv)
     args = _normalize_fire_args(args)
     # Fire expects to receive argv without the program name.
