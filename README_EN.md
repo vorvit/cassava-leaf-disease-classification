@@ -406,6 +406,16 @@ python -m uv run cassava-fire infer `
   --ckpt_s3 s3://mlops-cassava-project/cassava/models/.../best.ckpt
 ```
 
+**Note on public S3 access:**
+
+To download checkpoint from S3 without credentials, the bucket must be configured for public read access. In this case, HTTP access is used via URL:
+
+```
+https://storage.yandexcloud.net/<bucket>/<key>
+```
+
+If the bucket is private, you need to configure credentials in environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) or in `.env` file.
+
 **With additional parameters:**
 
 ```powershell

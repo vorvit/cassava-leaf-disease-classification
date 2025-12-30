@@ -406,6 +406,16 @@ python -m uv run cassava-fire infer `
   --ckpt_s3 s3://mlops-cassava-project/cassava/models/.../best.ckpt
 ```
 
+**Примечание о публичном доступе к S3:**
+
+Для загрузки checkpoint из S3 без креденшалов бакет должен быть настроен для публичного чтения. В этом случае используется HTTP-доступ по URL:
+
+```
+https://storage.yandexcloud.net/<bucket>/<key>
+```
+
+Если бакет приватный, необходимо настроить креденшалы в переменных окружения (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) или в файле `.env`.
+
 **С дополнительными параметрами:**
 
 ```powershell

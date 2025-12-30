@@ -90,6 +90,13 @@ def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
 
 
 def _http_url_from_s3(bucket: str, key: str, endpoint_url: str) -> str:
+    """Convert S3 bucket/key to HTTP URL for public access.
+
+    For Yandex Object Storage, the format is:
+    https://storage.yandexcloud.net/<bucket>/<key>
+
+    Note: The bucket must be configured for public read access for this to work.
+    """
     endpoint_url = endpoint_url.rstrip("/")
     return f"{endpoint_url}/{bucket}/{key}"
 
