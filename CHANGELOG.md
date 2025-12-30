@@ -50,6 +50,8 @@ All notable changes to this project will be documented in this file.
 
 - update changelog (5cf57df)
 
+- update changelog (4b15d22)
+
 ### Docs
 
 - expand README for task2 workflow (4736d10)
@@ -67,6 +69,8 @@ All notable changes to this project will be documented in this file.
 - rewrite CLI commands with Fire CLI and relative paths (2c6d571)
 
 - clarify checkpoint paths for inference (b103fc8)
+
+- remove hardcoded version number from checkpoint example (7125b2d)
 
 ### Features
 
@@ -117,6 +121,8 @@ All notable changes to this project will be documented in this file.
 - resolve paths relative to project root (7023cc3)
 
 - improve null checkpoint_path handling (0b21176)
+
+- synchronize default models and prevent MLflow encoding errors (ea5f148)
 
 ### refactor
 
