@@ -130,8 +130,16 @@ def infer(cfg: Any) -> dict[str, Any]:
     ckpt_path: Path | None = None
     temp_ckpt_path: Path | None = None  # Track temp files for cleanup
 
+    # Normalize checkpoint_path: handle None, "null", and empty strings
+    if ckpt_path_raw is None:
+        ckpt_path_raw = None
+    elif isinstance(ckpt_path_raw, str):
+        ckpt_path_raw = ckpt_path_raw.strip()
+        if ckpt_path_raw.lower() in ("null", "none", ""):
+            ckpt_path_raw = None
+
     # Step 1: Try explicit checkpoint_path from config
-    if ckpt_path_raw not in (None, "null"):
+    if ckpt_path_raw is not None:
         ckpt_path_str = str(ckpt_path_raw)
         # If checkpoint path is DVC-tracked, pull it via DVC.
         ckpt_pull_result = dvc_pull(targets=[ckpt_path_str])
