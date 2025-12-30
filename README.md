@@ -388,10 +388,20 @@ python -m uv run cassava-fire infer --image data/cassava/test_image/2216849948.j
 
 **С явным указанием checkpoint (относительный путь):**
 
+Для DVC-tracked модели (скачанной через `download-model`):
+
 ```powershell
 python -m uv run cassava-fire infer `
   --image data/cassava/test_image/2216849948.jpg `
   --ckpt artifacts/best.ckpt
+```
+
+Или для checkpoint из последнего обучения:
+
+```powershell
+python -m uv run cassava-fire infer `
+  --image data/cassava/test_image/2216849948.jpg `
+  --ckpt outputs/runs/version_18/checkpoints/best.ckpt
 ```
 
 **С загрузкой из S3:**

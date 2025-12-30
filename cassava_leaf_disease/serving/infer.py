@@ -33,7 +33,8 @@ def _resolve_device(device_cfg: str) -> torch.device:
 def _find_latest_checkpoint(outputs_dir: Path) -> Path | None:
     """Find the most recently modified checkpoint in outputs/ directory.
 
-    Searches for 'best.ckpt' files in outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/ pattern.
+    Searches for 'best.ckpt' files recursively in outputs/ directory.
+    Typical structure: outputs/runs/version_X/checkpoints/best.ckpt
     Returns the most recently modified checkpoint, or None if none found.
     """
     if not outputs_dir.exists():
@@ -41,7 +42,8 @@ def _find_latest_checkpoint(outputs_dir: Path) -> Path | None:
 
     checkpoints: list[tuple[float, Path]] = []
 
-    # Search for best.ckpt files in outputs/ subdirectories
+    # Search for best.ckpt files recursively in outputs/ subdirectories
+    # This will find files in outputs/runs/version_X/checkpoints/best.ckpt
     for ckpt_file in outputs_dir.rglob("best.ckpt"):
         if ckpt_file.is_file():
             # Use modification time as key for sorting

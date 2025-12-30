@@ -388,10 +388,20 @@ Inference will automatically find the latest trained model in `outputs/` (by mod
 
 **With explicit checkpoint path (relative path):**
 
+For DVC-tracked model (downloaded via `download-model`):
+
 ```powershell
 python -m uv run cassava-fire infer `
   --image data/cassava/test_image/2216849948.jpg `
   --ckpt artifacts/best.ckpt
+```
+
+Or for checkpoint from latest training:
+
+```powershell
+python -m uv run cassava-fire infer `
+  --image data/cassava/test_image/2216849948.jpg `
+  --ckpt outputs/runs/version_18/checkpoints/best.ckpt
 ```
 
 **With S3 download:**
